@@ -70,6 +70,19 @@ async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔄 Готов к новому анализу. Пришли PDF-файл статьи.")
 
 
+# ─── АВТООЧИСТКА КОНТЕКСТА ───────────────────────────────────────────────────
+
+async def _clear_user_context(context: ContextTypes.DEFAULT_TYPE):
+    """Очищает результат анализа конкретного пользователя через 1 час."""
+    user_id = context.job.data["user_id"]
+    user_data = context.application.user_data.get(user_id, {})
+    user_data.pop("last_result", None)
+    user_data.pop("last_mode", None)
+    user_data.pop("last_lang", None)
+    user_data.pop("pending_pdf_id", None)
+    logger.info(f"Контекст пользователя {user_id} очищен по таймауту.")
+
+
 # ─── ОБРАБОТКА PDF ───────────────────────────────────────────────────────────
 
 async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -179,6 +192,14 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data["last_result"] = result
         context.user_data["last_mode"] = mode
         context.user_data["last_lang"] = lang
+
+        # Очищаем результат через 1 час
+        context.job_queue.run_once(
+            _clear_user_context,
+            when=3600,
+            data={"user_id": user_id, "chat_id": update.effective_chat.id},
+            name=f"clear_{user_id}"
+        )
 
         header = f"📊 *Результат анализа* ({mode_label})\n\n"
         full_text = header + result
