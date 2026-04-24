@@ -28,12 +28,13 @@ async def analyze_article(pdf_bytes: bytes, mode: str = "classical", lang: str =
     if not article_text.strip():
         return "Не удалось извлечь текст из PDF. Возможно файл содержит только изображения."
 
-    if len(article_text) > 60000:
-        article_text = article_text[:60000] + "\n\n[...текст обрезан...]"
+    if len(article_text) > 40000:
+        article_text = article_text[:40000] + "\n\n[...текст обрезан — анализируй то что есть...]"
 
     system_prompt = build_system_prompt(mode, lang)
 
-    user_message = f"""Проанализируй следующую научную статью согласно инструкциям:
+    user_message = f"""Проанализируй следующую научную статью согласно инструкциям системного промпта. \
+ВАЖНО: всегда выполняй анализ независимо от длины текста — анализируй то что предоставлено, не отказывайся.
 
 --- НАЧАЛО СТАТЬИ ---
 {article_text}
