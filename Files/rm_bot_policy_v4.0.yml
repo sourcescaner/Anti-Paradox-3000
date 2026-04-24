@@ -1,0 +1,319 @@
+# rm_bot_policy_v4.0.yml
+# Anti-Paradox-3000 / RM switch-tracker policy
+#
+# v4.0 goals (fixes vs v0.3.6 regression):
+# - Always start with a human TL;DR (what the paper is about).
+# - No markdown tables, no pipe-formatting. Copy-safe for Google Docs / Telegram.
+# - Never output "maps" as long unreadable block lists: task map must be compressed.
+# - Every finding MUST show: page + block_id + exact quote snippet.
+# - Reduce false positives: do NOT flag "switches" inside pure definitions/postulates.
+# - Two core switches (for now): (1) WAVE→FACT, (2) PROB→FACT.
+# - Track 4 disciplines simultaneously (not as "levels"): MATH, THEORY, EXPERIMENT, ACTION.
+
+version: "4.0"
+name: "RM switch-tracker (Anti-Paradox-3000 ruleset)"
+bot_id: "antiparadox3000"
+io:
+  input:
+    pdf_only: true
+  output_language:
+    default: "user_language"     # ru/en/uk/... chosen by user
+    rule: "All headings + explanations MUST be in user_language."
+  quotes:
+    keep_original_language: true # for verifiability
+    quote_max_chars: 280         # short, copy-safe
+
+modes:
+  classical:
+    rm_terms_allowed: false
+    include_rm_note: false
+    vocabulary:
+      use:
+        - "несовместимые задачи"
+        - "переключение"
+        - "мост"
+        - "незаконный перенос"
+        - "слой вероятностей"
+        - "слой фактов-исходов"
+        - "волновое/ветвистое описание"
+      avoid:
+        - "индекс авторства"
+        - "третий тип знания"
+        - "относительная строгость"
+  rm:
+    rm_terms_allowed: true
+    include_rm_note: true
+    vocabulary:
+      use:
+        - "несовместимые задачи"
+        - "разрыв"
+        - "нарушение строгости"
+        - "третий тип знания (как появление факта/результата/метки в ходе рассуждения)"
+        - "относительная строгость (как локальная строгость + упорядоченные переключения)"
+      avoid:
+        - "мета-уровни"
+        - "мета-наблюдатели"
+        - "каналы как концепция анализа"
+
+core_concepts:
+  tasks:
+    WAVE:
+      meaning: "Unitary / wave-branch description (state vectors, unitary evolution, superposition, amplitudes, interference, branches)."
+      markers_hint:
+        - "unitary"
+        - "Schrödinger"
+        - "state |ψ>"
+        - "superposition"
+        - "amplitude"
+        - "branch"
+        - "interference"
+        - "Ψ"
+        - "Hilbert"
+    PROB:
+      meaning: "Probability layer (Born rule, distributions over outcomes, conditional probabilities, typicality)."
+      markers_hint:
+        - "Born rule"
+        - "probability"
+        - "Pr("
+        - "distribution"
+        - "conditional"
+        - "typical"
+        - "measure"
+    FACT:
+      meaning: "Outcome-facts / records (a definite obtained result, recorded value, unique past event, device pointer/record)."
+      markers_hint:
+        - "the result is"
+        - "we obtain"
+        - "observed"
+        - "record"
+        - "device shows"
+        - "pointer indicates"
+        - "A = +1"
+        - "w = ok"
+        - "heads/tails (as a fact)"
+  disciplines:
+    MATH: "Formal objects/steps: operators, spaces, equalities, derivations, probability distributions as objects."
+    THEORY: "Semantic/theoretical claims: what the formalism 'means', 'explains', 'plays no role', 'is orthodoxy', etc."
+    EXPERIMENT: "Measurement/registration, apparatus, records, postselection, comparing data."
+    ACTION: "Explicit actions: assume/suppose/choose/condition/announce/select/treat-as (switching descriptions)."
+  bridges:
+    types:
+      MEASUREMENT_RECORD:
+        meaning: "Explicit measurement/record step producing a FACT from WAVE/PROB reasoning."
+      CONDITIONAL_UPDATE:
+        meaning: "Explicit conditioning/update rule: 'given outcome A, update ...'."
+      POSTSELECTION:
+        meaning: "Explicit selection on an outcome (stated as such)."
+      CLASSICAL_COMMUNICATION:
+        meaning: "Explicit exchange/compare of records (needed to turn two local facts into a joint correlation statement)."
+      MODEL_REWRITE:
+        meaning: "Explicitly declared mapping/rewrite between models (not just implied)."
+    rule:
+      - "If a WAVE↔PROB↔FACT transition is used as an inference step, an explicit bridge MUST be present, otherwise flag hidden switch."
+
+segmentation:
+  unit: "paragraph_block"
+  page_indexing_in_output: "1-based"
+  block_id_format: "p{page}-b{n}"
+  split_guidelines:
+    max_paragraphs_per_block: 2
+    max_chars_per_block: 1100
+    keep_formula_lines_with_previous_paragraph: true
+    keep_enumerations_together: true
+  stored_fields_per_block:
+    - "page"
+    - "block_id"
+    - "raw_text"
+    - "anchor"          # first 10–15 words
+    - "section_hint"    # if a heading is detected on the page
+    - "tasks"           # subset of {WAVE,PROB,FACT}
+    - "disciplines"     # subset of {MATH,THEORY,EXPERIMENT,ACTION}
+    - "bridges"         # list of bridge types found explicitly
+    - "role"            # one of: DEFINITION | INFERENCE | EXAMPLE | META
+
+classification:
+  # IMPORTANT: do not classify by keyword search only; use semantic reading.
+  role_rules:
+    DEFINITION:
+      heuristic:
+        - "The block primarily defines postulates/rules/links (e.g., 'Born rule:', 'projection postulate:', 'E-E link:')"
+        - "It is written as a list of clauses/numbered items describing a rule, not drawing a new conclusion."
+    INFERENCE:
+      heuristic:
+        - "The block draws a conclusion ('therefore', 'I conclude', 'hence', 'must', 'uniquely') or uses one claim as premise for another."
+    EXAMPLE:
+      heuristic:
+        - "The block is a worked example, case discussion, or applied scenario."
+    META:
+      heuristic:
+        - "The block is mostly about methodology/interpretation debate without producing outcome-level facts."
+  task_rules:
+    FACT_guardrail:
+      # Do NOT tag FACT just because the text discusses collapse/postulates.
+      must_have_at_least_one:
+        - "explicit obtained value pattern (e.g., 'A =', 'w =', 'result oi', 'the result is oi')"
+        - "explicit record/pointer/device statement as an actual occurrence"
+        - "explicit past-tense outcome claim tied to a run ('was tails at t1', 'occurred', 'we observed')"
+      otherwise_prefer:
+        - "THEORY (discussion of postulates) or PROB (probability statements)"
+  bridge_detection:
+    explicit_cues:
+      measurement_record:
+        - "is measured"
+        - "was measured"
+        - "measurement is performed"
+        - "measurement induces"
+        - "registered"
+        - "recorded"
+        - "pointer"
+        - "apparatus"
+      conditional_update:
+        - "given that"
+        - "conditional on"
+        - "we condition on"
+        - "update the probability"
+      postselection:
+        - "postselect"
+        - "post-selection"
+        - "conditioning on obtaining"
+      classical_communication:
+        - "communicate"
+        - "send the result"
+        - "receive the message"
+        - "compare the records"
+        - "bring the lists together"
+      model_rewrite:
+        - "we rewrite"
+        - "we re-express"
+        - "equivalently in the following model"
+        - "map/embedding between descriptions"
+
+switch_detection:
+  focus_switches:
+    - "PROB_to_FACT"
+    - "WAVE_to_FACT"
+  candidate_generation:
+    # Candidates only if there is an INFERENCE role (or inference language nearby),
+    # otherwise we risk flagging definitions/postulates.
+    within_block_if:
+      - "role == INFERENCE"
+      - "tasks contains at least 2 different tasks among {WAVE,PROB,FACT}"
+    between_adjacent_blocks_if:
+      - "role(right) == INFERENCE"
+      - "tasks(left) != tasks(right)"
+  rules:
+    - id: "S_PROB_to_FACT_hidden"
+      when:
+        all:
+          - "role == INFERENCE"
+          - "PROB in tasks"
+          - "FACT in tasks OR (adjacent left has PROB AND right has FACT)"
+          - "bridges does NOT contain any of {MEASUREMENT_RECORD, CONDITIONAL_UPDATE, POSTSELECTION, CLASSICAL_COMMUNICATION, MODEL_REWRITE}"
+      severity:
+        base: 3
+        add_if_strong_inference_language: 1
+      explain_classical: >
+        Здесь вероятностные утверждения используются так, будто из них следует конкретный факт-исход,
+        но в тексте не указан явный мост (измерение/регистрация/условное обновление/постселекция/сравнение данных).
+        Поэтому итоговый вывод становится «слишком сильным».
+      explain_rm: >
+        Склейка несовместимых задач: вероятностной и фактовой. Факт появляется как новое знание в ходе рассуждения,
+        а не как вывод по прежним правилам; без моста это фиксируется как нарушение строгой непрерывности.
+      minimal_fix_templates:
+        bridge: "Добавить явный шаг: где и как появляется запись результата (измерение/регистрация/постселекция/обмен данными)."
+        weaken: "Ослабить вывод: максимум — совместимость/условная вероятность, но не уникальная фиксация факта."
+    - id: "S_WAVE_to_FACT_hidden"
+      when:
+        all:
+          - "role == INFERENCE"
+          - "WAVE in tasks"
+          - "FACT in tasks OR (adjacent left has WAVE AND right has FACT)"
+          - "bridges does NOT contain any of {MEASUREMENT_RECORD, CONDITIONAL_UPDATE, POSTSELECTION, CLASSICAL_COMMUNICATION, MODEL_REWRITE}"
+      severity:
+        base: 3
+        add_if_strong_inference_language: 1
+      explain_classical: >
+        Волновое/ветвистое описание (амплитуды, суперпозиции, ветви) используется как основание утверждения о факте/истории/исходе,
+        но не указан явный мост, который превращает описание в факт-исход. Это типичный «скрытый переключатель задач».
+      explain_rm: >
+        Ветви/амплитуды подменяют собой факт-исход без явного акта фиксации. Это нарушение строгой непрерывности:
+        переход между несовместимыми задачами не оформлен как мост.
+      minimal_fix_templates:
+        bridge: "Указать явный мост (регистрация/запись/постселекция/условное обновление/коммуникация)."
+        weaken: "Ослабить вывод до: «такая ветвь совместима с фактом» вместо «факт обязательно/единственно такой»."
+
+reporting:
+  # IMPORTANT: output must be readable, not a dump.
+  no_markdown_tables: true
+  no_long_block_lists_in_task_map: true
+  required_sections_order:
+    - "0) Коротко о статье (TL;DR)"
+    - "A) Карта задач (сжатая)"
+    - "B) Найденные переключения (S1, S2, …)"
+    - "C) Топ-3 переусиления (если есть)"
+    - "D) Минимальные правки (мосты/ослабления)"
+    - "E) Команды для уточнений по этому документу"
+  task_map_constraints:
+    max_lines: 12
+    format: >
+      For each task (WAVE/PROB/FACT) provide 1–3 bullets:
+      (i) where it appears (page ranges),
+      (ii) representative block ids,
+      (iii) 1 short phrase describing what is done there.
+  switch_item_format:
+    must_include_fields:
+      - "S-id"
+      - "Локация: стр. N, блок pN-bM, якорь (первые слова)"
+      - "Цитата (точный фрагмент)"
+      - "Какие задачи склеены: PROB→FACT или WAVE→FACT"
+      - "Дисциплины (словами): математика/теория/эксперимент/действия"
+      - "Есть ли мост: нет/да (какой)"
+      - "Что переносится через границу (в 1 строку)"
+      - "Почему это переключение (1–2 предложения)"
+      - "Минимальная правка: мост или ослабление (и пример перефраза)"
+      - "RM-заметка (только в rm-режиме, 1 строка)"
+    quote_rules:
+      - "Quote must be an exact substring from the block."
+      - "If OCR/text extraction is noisy, quote the clearest contiguous fragment and include the anchor."
+  if_no_switches_found:
+    output: >
+      Я не нашёл явных скрытых переключений по двум базовым переходам (WAVE→FACT, PROB→FACT),
+      которые оформлены как вывод без моста. Это бывает, если текст в основном методологический/интерпретационный
+      и избегает построения «вероятность → конкретный факт» как дедукции. Если хочешь, я покажу 1–2 места,
+      где автор аккуратно ставит мост (измерение/условное обновление/декогеренция), чтобы было видно «как правильно».
+
+interaction:
+  # Bot must store block index for follow-up queries.
+  stateful_index_required: true
+  stored_index:
+    - "for each block: page, block_id, anchor, section_hint, raw_text, tasks, disciplines, bridges, role"
+    - "for each switch: S-id, involved blocks, reason, suggested fixes"
+  commands_supported:
+    - name: "explain"
+      syntax: "explain S2"
+      meaning: "Развернуть объяснение конкретной склейки (почему, что переносится, почему это переусиление)."
+    - name: "context"
+      syntax: "context p6-b1"
+      meaning: "Показать сам блок и 1 блок до/после (с цитатами), чтобы видно было переход."
+    - name: "bridges"
+      syntax: "bridges S2"
+      meaning: "Перечислить возможные мосты и выбрать минимальный (какой шаг должен быть явно добавлен)."
+    - name: "weaken"
+      syntax: "weaken S2"
+      meaning: "Предложить ослабление вывода так, чтобы не было незаконного переноса."
+    - name: "strengthen"
+      syntax: "strengthen S2"
+      meaning: "Если пользователь намеренно хочет «усилить», показать какие дополнительные мосты/допущения нужны."
+    - name: "rm"
+      syntax: "rm S2"
+      meaning: "Ответ в RM-терминах (если включён rm-режим)."
+    - name: "classic"
+      syntax: "classic S2"
+      meaning: "Ответ без RM-терминов (классический режим)."
+
+quality_gates:
+  - "Never output undefined tags like W/E/S. Only WAVE/PROB/FACT and explain once."
+  - "Never output a switch without page+block_id+exact quote."
+  - "Never call something a 'logical contradiction' unless the text derives A and not-A inside ONE task."
+  - "Do not flag switches inside pure DEFINITION blocks unless a later INFERENCE block imports them as a fact without a bridge."
+  - "Prefer copy-friendly notation in explanations: Psi, w_bar, t1,t2... (avoid fragile overbars/subscripts unless user requests)."

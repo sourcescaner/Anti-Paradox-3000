@@ -1,7 +1,7 @@
 import yaml
 import os
 
-POLICY_PATH = os.path.join(os.path.dirname(__file__), "..", "Files", "rm_bot_policy_v3.4.yml")
+POLICY_PATH = os.path.join(os.path.dirname(__file__), "..", "Files", "rm_bot_policy_v4.0.yml")
 
 
 def load_policy() -> dict:
@@ -28,64 +28,98 @@ def build_system_prompt(mode: str = "classical", lang: str = "ru") -> str:
         )
 
     # --- Режим ---
+    modes = p.get("modes", {})
+    mode_cfg = modes.get(mode, modes.get("classical", {}))
+    vocab_use = ", ".join(mode_cfg.get("vocabulary", {}).get("use", []))
+    vocab_avoid = ", ".join(mode_cfg.get("vocabulary", {}).get("avoid", []))
+    include_rm_note = mode_cfg.get("include_rm_note", False)
+
     if mode == "rm":
         mode_block = (
-            "РЕЖИМ: RM (с терминологией относительной математики)\n"
-            "Используй: несовместимые задачи, разрыв, нарушение строгости, третий тип знания "
-            "(как факт появления результата/метки), относительная строгость.\n"
-            "Избегай: мета-уровни, мета-наблюдатели, каналы как концепция анализа.\n"
-            "Добавляй поле rm_note к каждому найденному переключению."
+            f"РЕЖИМ: RM (с терминологией относительной математики)\n"
+            f"Используй: {vocab_use}\n"
+            f"Избегай: {vocab_avoid}\n"
+            f"Добавляй поле «RM-заметка» к каждому найденному переключению."
         )
     else:
         mode_block = (
-            "РЕЖИМ: CLASSICAL (без терминологии RM)\n"
-            "Используй: task switch, bridge, illegitimate transfer, outcome-fact, "
-            "probability layer, wave-description.\n"
-            "Избегай: third type of knowledge, index of authorship, relative rigor.\n"
-            "Поле rm_note НЕ добавляй."
+            f"РЕЖИМ: CLASSICAL (без терминологии RM)\n"
+            f"Используй: {vocab_use}\n"
+            f"Избегай: {vocab_avoid}\n"
+            f"Поле «RM-заметка» НЕ добавляй."
         )
 
-    # --- Основные концепции ---
+    # --- Задачи ---
     tasks = p.get("core_concepts", {}).get("tasks", {})
     tasks_text = ""
     for tid, tdef in tasks.items():
-        markers = ", ".join(tdef.get("typical_markers", [])[:5])
+        markers = ", ".join(tdef.get("markers_hint", [])[:6])
         tasks_text += f"  {tid}: {tdef.get('meaning', '')}\n    Маркеры: {markers}\n"
 
+    # --- Дисциплины ---
     disciplines = p.get("core_concepts", {}).get("disciplines", {})
     disc_text = "\n".join(f"  {did}: {ddef}" for did, ddef in disciplines.items())
 
+    # --- Мосты ---
     bridges = p.get("core_concepts", {}).get("bridges", {}).get("types", {})
     bridge_text = ""
     for bid, bdef in bridges.items():
         bridge_text += f"  {bid}: {bdef.get('meaning', '')}\n"
     bridge_rule = p.get("core_concepts", {}).get("bridges", {}).get("rule", [""])[0]
 
-    # --- Процедура ---
-    procedure = p.get("procedure", [])
-    proc_text = ""
-    for step in procedure:
-        proc_text += f"\n{step.get('step', '')}\n"
-        for detail in step.get("details", []):
-            proc_text += f"  • {detail}\n"
+    # --- Роли блоков ---
+    roles = p.get("classification", {}).get("role_rules", {})
+    roles_text = ""
+    for role, rdef in roles.items():
+        hints = " / ".join(rdef.get("heuristic", []))
+        roles_text += f"  {role}: {hints}\n"
 
-    # --- Формат вывода ---
-    fmt = p.get("output_format", {})
-    sections = fmt.get("required_sections", [])
+    fact_guardrail = p.get("classification", {}).get("task_rules", {}).get("FACT_guardrail", {})
+    fact_must = " | ".join(fact_guardrail.get("must_have_at_least_one", []))
+    fact_otherwise = " | ".join(fact_guardrail.get("otherwise_prefer", []))
+
+    # --- Правила переключений ---
+    switch_rules = p.get("switch_detection", {}).get("rules", [])
+    switches_text = ""
+    for rule in switch_rules:
+        rid = rule.get("id", "")
+        sev_base = rule.get("severity", {}).get("base", "?")
+        sev_add = rule.get("severity", {}).get("add_if_strong_inference_language", 0)
+        explain_key = "explain_rm" if mode == "rm" else "explain_classical"
+        explain = rule.get(explain_key, rule.get("explain_classical", ""))
+        fix_bridge = rule.get("minimal_fix_templates", {}).get("bridge", "")
+        fix_weaken = rule.get("minimal_fix_templates", {}).get("weaken", "")
+        switches_text += (
+            f"\n  [{rid}] severity={sev_base}+{sev_add} при сильном языке вывода\n"
+            f"  Объяснение: {explain.strip()}\n"
+            f"  Мост: {fix_bridge}\n"
+            f"  Ослабление: {fix_weaken}\n"
+        )
+
+    # --- Формат отчёта ---
+    reporting = p.get("reporting", {})
+    sections = reporting.get("required_sections_order", [])
     sections_text = "\n".join(f"  {s}" for s in sections)
 
-    tmpl = fmt.get("switch_item_template", {}).get("fields", [])
-    tmpl_text = ""
-    for field in tmpl:
-        if isinstance(field, dict):
-            for k, v in field.items():
-                tmpl_text += f"  {k}: {v}\n"
+    task_map_fmt = reporting.get("task_map_constraints", {})
+    task_map_max = task_map_fmt.get("max_lines", 12)
+
+    switch_fields = reporting.get("switch_item_format", {}).get("must_include_fields", [])
+    switch_fields_text = "\n".join(f"  • {f}" for f in switch_fields)
+
+    no_switches_msg = reporting.get("if_no_switches_found", {}).get("output", "")
+
+    # --- Команды взаимодействия ---
+    commands = p.get("interaction", {}).get("commands_supported", [])
+    commands_text = ""
+    for cmd in commands:
+        commands_text += f"  {cmd.get('syntax','')}: {cmd.get('meaning','')}\n"
 
     # --- Ворота качества ---
     gates = p.get("quality_gates", [])
     gates_text = "\n".join(f"  - {g}" for g in gates)
 
-    prompt = f"""You are a scientific article analyzer specializing in detecting hidden logical switches between incompatible mathematical tasks in quantum and quantum-like reasoning.
+    prompt = f"""You are a scientific article analyzer. You detect hidden logical switches between incompatible mathematical tasks (WAVE, PROB, FACT) in quantum and quantum-like reasoning.
 
 {lang_block}
 
@@ -94,6 +128,10 @@ def build_system_prompt(mode: str = "classical", lang: str = "ru") -> str:
 ═══════════════════════════════════════
 ТРИ ЗАДАЧИ (не смешивай без явного моста):
 {tasks_text}
+ВАЖНО — метка FACT:
+  Ставь ТОЛЬКО если есть хотя бы одно из: {fact_must}
+  Иначе предпочитай: {fact_otherwise}
+
 ═══════════════════════════════════════
 ЧЕТЫРЕ ДИСЦИПЛИНЫ (анализируй каждый блок по всем четырём):
 {disc_text}
@@ -104,18 +142,34 @@ def build_system_prompt(mode: str = "classical", lang: str = "ru") -> str:
 Правило: {bridge_rule}
 
 ═══════════════════════════════════════
-ПРОЦЕДУРА АНАЛИЗА:
-{proc_text}
+РОЛИ БЛОКОВ (определяй роль каждого блока перед анализом переключений):
+{roles_text}
+ВАЖНО: Не помечай переключения внутри блоков с ролью DEFINITION.
+Только блоки с ролью INFERENCE могут быть источником переключений.
+
+═══════════════════════════════════════
+ПРАВИЛА ПЕРЕКЛЮЧЕНИЙ:
+{switches_text}
+
 ═══════════════════════════════════════
 ОБЯЗАТЕЛЬНЫЕ РАЗДЕЛЫ ОТЧЁТА (строго в этом порядке):
 {sections_text}
 
-ШАБЛОН КАЖДОГО ПЕРЕКЛЮЧЕНИЯ:
-{tmpl_text}
+КАРТА ЗАДАЧ: максимум {task_map_max} строк, сжатый формат (не перечисляй все блоки).
+
+ФОРМАТ КАЖДОГО ПЕРЕКЛЮЧЕНИЯ (все поля обязательны):
+{switch_fields_text}
+
+ЕСЛИ ПЕРЕКЛЮЧЕНИЙ НЕ НАЙДЕНО:
+{no_switches_msg}
+
+═══════════════════════════════════════
+КОМАНДЫ ДЛЯ УТОЧНЕНИЙ (раздел E — всегда включай в конец отчёта):
+{commands_text}
 ═══════════════════════════════════════
 ТРЕБОВАНИЯ К КАЧЕСТВУ:
 {gates_text}
 
-Точность важнее полноты. Не выдумывай ошибки. Сообщай только то, что подтверждается структурой рассуждения в тексте.
+Точность важнее полноты. Не выдумывай переключения. Сообщай только то, что подтверждается структурой рассуждения.
 """
     return prompt
