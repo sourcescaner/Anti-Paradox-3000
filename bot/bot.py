@@ -6,7 +6,7 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, ContextTypes, filters
 )
-from config import TELEGRAM_TOKEN, MAX_PDF_SIZE_MB, MAX_FREE_ANALYSES, ADMIN_USER_IDS
+from config import TELEGRAM_TOKEN, MAX_PDF_SIZE_MB, MAX_FREE_ANALYSES, ADMIN_USER_IDS, DEFAULT_LANGUAGE
 from policy_loader import POLICY_VERSION
 from analyzer import analyze_article
 
@@ -186,7 +186,7 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
         file = await context.bot.get_file(pdf_id)
         pdf_bytes = await file.download_as_bytearray()
 
-        lang = context.user_data.get("lang", "ru")
+        lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
         result = await analyze_article(bytes(pdf_bytes), mode=mode, lang=lang)
 
         user_analysis_count[user_id] = user_analysis_count.get(user_id, 0) + 1
@@ -262,7 +262,7 @@ async def handle_adjust(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     last_result = context.user_data.get("last_result")
-    lang = context.user_data.get("last_lang", "ru")
+    lang = context.user_data.get("last_lang", DEFAULT_LANGUAGE)
 
     if not last_result:
         await query.message.reply_text("⚠️ Нет предыдущего анализа. Пришли PDF снова.")
@@ -330,7 +330,7 @@ async def handle_text_question(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     question = update.message.text.strip()
-    lang = context.user_data.get("last_lang", "ru")
+    lang = context.user_data.get("last_lang", DEFAULT_LANGUAGE)
 
     thinking_msg = await update.message.reply_text("💭 Думаю...")
 

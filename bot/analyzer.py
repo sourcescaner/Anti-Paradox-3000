@@ -81,17 +81,16 @@ async def adjust_analysis(previous_result: str, instruction: str, lang: str = "r
     return response.choices[0].message.content
 
 
-async def ask_about_analysis(previous_result: str, question: str, lang: str = "ru") -> str:
-    """Отвечает на вопрос пользователя по результату анализа."""
-
-    lang_note = (
-        "Отвечай ТОЛЬКО на русском языке."
-        if lang == "ru" else
-        "Respond ONLY in English."
-    )
+async def ask_about_analysis(previous_result: str, question: str, lang: str = "en") -> str:
+    """Отвечает на вопрос пользователя по результату анализа.
+    Автоматически отвечает на языке вопроса пользователя."""
 
     system = (
-        f"You are a scientific reasoning analyst. {lang_note} "
+        "You are a scientific reasoning analyst. "
+        "IMPORTANT: Detect the language of the user's question and respond in THAT SAME language. "
+        "If the user writes in Chinese — respond in Chinese. "
+        "If in Ukrainian — respond in Ukrainian. "
+        "If in Spanish — respond in Spanish. And so on. "
         "The user has already received an analysis report and is asking a follow-up question about it. "
         "Answer concisely and clearly, referring to specific findings from the report where relevant. "
         "Do not repeat the entire report — only answer what is asked."
