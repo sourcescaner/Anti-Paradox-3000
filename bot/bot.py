@@ -6,7 +6,7 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, ContextTypes, filters
 )
-from config import TELEGRAM_TOKEN, MAX_PDF_SIZE_MB, MAX_FREE_ANALYSES
+from config import TELEGRAM_TOKEN, MAX_PDF_SIZE_MB, MAX_FREE_ANALYSES, ADMIN_USER_IDS
 from analyzer import analyze_article
 
 logging.basicConfig(
@@ -90,7 +90,7 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     count = user_analysis_count.get(user_id, 0)
-    if count >= MAX_FREE_ANALYSES:
+    if count >= MAX_FREE_ANALYSES and user_id not in ADMIN_USER_IDS:
         await update.message.reply_text(
             f"⚠️ Вы использовали все {MAX_FREE_ANALYSES} бесплатных анализа.\n"
             "💳 Для продолжения необходима подписка (скоро)."

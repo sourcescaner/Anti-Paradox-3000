@@ -18,3 +18,6 @@ MAX_FREE_ANALYSES = 3  # бесплатных анализов на пользо
 
 # Языки
 DEFAULT_LANGUAGE = "ru"
+
+# Администраторы — безлимитный доступ
+ADMIN_USER_IDS = {1010993409}  # Roman Berezuiev
