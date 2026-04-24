@@ -113,26 +113,37 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["pending_pdf_id"] = document.file_id
     context.user_data["pending_pdf_name"] = document.file_name
-    # Сбрасываем предыдущий результат при новом PDF
     context.user_data.pop("last_result", None)
+
+    # Определяем язык автоматически из настроек Telegram
+    tg_lang = update.effective_user.language_code or ""
+    if tg_lang.startswith("ru"):
+        lang = "ru"
+    elif tg_lang.startswith("uk"):
+        lang = "uk"
+    else:
+        lang = "en"
+    context.user_data["lang"] = lang
+
+    lang_flag = {"ru": "🇷🇺", "uk": "🇺🇦", "en": "🇬🇧"}.get(lang, "🇬🇧")
 
     keyboard = [
         [
-            InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"),
-            InlineKeyboardButton("🇺🇦 Українська", callback_data="lang_uk"),
             InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"),
+            InlineKeyboardButton("🇺🇦 Українська", callback_data="lang_uk"),
+            InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"),
         ],
         [
-            InlineKeyboardButton("📋 Классический", callback_data="mode_classic"),
-            InlineKeyboardButton("🔬 С терминами ОМ", callback_data="mode_rm"),
+            InlineKeyboardButton("📋 Classic", callback_data="mode_classic"),
+            InlineKeyboardButton("🔬 RM mode", callback_data="mode_rm"),
         ],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"📄 Файл получен: *{document.file_name}*\n\n"
-        f"1️⃣ Выбери язык ответа (по умолчанию — русский)\n"
-        f"2️⃣ Выбери режим анализа:",
+        f"📄 *{document.file_name}*\n\n"
+        f"Language auto-detected: {lang_flag}\n"
+        f"Change if needed ↑ then choose analysis mode ↓",
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
