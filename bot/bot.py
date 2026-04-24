@@ -7,6 +7,7 @@ from telegram.ext import (
     CallbackQueryHandler, ContextTypes, filters
 )
 from config import TELEGRAM_TOKEN, MAX_PDF_SIZE_MB, MAX_FREE_ANALYSES, ADMIN_USER_IDS
+from policy_loader import POLICY_VERSION
 from analyzer import analyze_article
 
 logging.basicConfig(
@@ -118,6 +119,7 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [
             InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"),
+            InlineKeyboardButton("🇺🇦 Українська", callback_data="lang_uk"),
             InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"),
         ],
         [
@@ -149,10 +151,11 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
     await query.answer()
 
-    if query.data in ("lang_ru", "lang_en"):
-        context.user_data["lang"] = "ru" if query.data == "lang_ru" else "en"
-        lang_label = "🇷🇺 Русский" if query.data == "lang_ru" else "🇬🇧 English"
-        await query.answer(f"Язык выбран: {lang_label}", show_alert=False)
+    if query.data in ("lang_ru", "lang_uk", "lang_en"):
+        lang_map = {"lang_ru": "ru", "lang_uk": "uk", "lang_en": "en"}
+        label_map = {"lang_ru": "🇷🇺 Русский", "lang_uk": "🇺🇦 Українська", "lang_en": "🇬🇧 English"}
+        context.user_data["lang"] = lang_map[query.data]
+        await query.answer(f"Язык выбран: {label_map[query.data]}", show_alert=False)
         return
 
     user_id = update.effective_user.id
@@ -201,7 +204,7 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
             name=f"clear_{user_id}"
         )
 
-        header = f"📊 *Результат анализа* ({mode_label})\n\n"
+        header = f"📊 *Результат анализа* ({mode_label}) | политика {POLICY_VERSION}\n\n"
         full_text = header + result
 
         if len(full_text) <= 4096:
