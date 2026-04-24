@@ -1,7 +1,7 @@
 import yaml
 import os
 
-POLICY_PATH = os.path.join(os.path.dirname(__file__), "..", "Files", "rm_bot_policy_v3.4.yml")
+POLICY_PATH = os.path.join(os.path.dirname(__file__), "..", "Files", "rm_bot_policy_v0.3.6.yml")
 
 
 def load_policy() -> dict:
@@ -28,148 +28,120 @@ def build_system_prompt(mode: str = "classical", lang: str = "ru") -> str:
         )
 
     # --- Режим ---
-    modes = p.get("modes", {})
-    mode_cfg = modes.get(mode, modes.get("classical", {}))
-    vocab_use = ", ".join(mode_cfg.get("vocabulary", {}).get("use", []))
-    vocab_avoid = ", ".join(mode_cfg.get("vocabulary", {}).get("avoid", []))
-    include_rm_note = mode_cfg.get("include_rm_note", False)
-
     if mode == "rm":
         mode_block = (
-            f"РЕЖИМ: RM (с терминологией относительной математики)\n"
-            f"Используй: {vocab_use}\n"
-            f"Избегай: {vocab_avoid}\n"
-            f"Добавляй поле «RM-заметка» к каждому найденному переключению."
+            "РЕЖИМ: RM (с терминологией относительной математики)\n"
+            "Используй: несовместимые задачи, склейка, нарушение строгости, "
+            "третий тип знания, относительная строгость.\n"
+            "Избегай: мета-уровни, мета-наблюдатели."
         )
     else:
         mode_block = (
-            f"РЕЖИМ: CLASSICAL (без терминологии RM)\n"
-            f"Используй: {vocab_use}\n"
-            f"Избегай: {vocab_avoid}\n"
-            f"Поле «RM-заметка» НЕ добавляй."
+            "РЕЖИМ: CLASSICAL (без терминологии RM)\n"
+            "Используй: скрытый переход, незаконный перенос, мост, слой вероятностей, слой фактов.\n"
+            "Избегай: третий тип знания, относительная строгость, склейка."
         )
 
-    # --- Задачи ---
-    tasks = p.get("core_concepts", {}).get("tasks", {})
-    tasks_text = ""
-    for tid, tdef in tasks.items():
-        markers = ", ".join(tdef.get("markers_hint", [])[:6])
-        tasks_text += f"  {tid}: {tdef.get('meaning', '')}\n    Маркеры: {markers}\n"
+    # --- Метки задач ---
+    tags = p.get("tags", {})
+    task_tags = tags.get("tasks", {})
+    disc_tags = tags.get("disciplines", {})
+    tasks_text = "\n".join(f"  {k}: {v}" for k, v in task_tags.items())
+    disc_text = "\n".join(f"  {k}: {v}" for k, v in disc_tags.items())
 
-    # --- Дисциплины ---
-    disciplines = p.get("core_concepts", {}).get("disciplines", {})
-    disc_text = "\n".join(f"  {did}: {ddef}" for did, ddef in disciplines.items())
-
-    # --- Мосты ---
-    bridges = p.get("core_concepts", {}).get("bridges", {}).get("types", {})
-    bridge_text = ""
-    for bid, bdef in bridges.items():
-        bridge_text += f"  {bid}: {bdef.get('meaning', '')}\n"
-    bridge_rule = p.get("core_concepts", {}).get("bridges", {}).get("rule", [""])[0]
-
-    # --- Роли блоков ---
-    roles = p.get("classification", {}).get("role_rules", {})
-    roles_text = ""
-    for role, rdef in roles.items():
-        hints = " / ".join(rdef.get("heuristic", []))
-        roles_text += f"  {role}: {hints}\n"
-
-    fact_guardrail = p.get("classification", {}).get("task_rules", {}).get("FACT_guardrail", {})
-    fact_must = " | ".join(fact_guardrail.get("must_have_at_least_one", []))
-    fact_otherwise = " | ".join(fact_guardrail.get("otherwise_prefer", []))
+    # --- Триггеры (сокращённо) ---
+    dicts = p.get("dictionaries", {})
+    w_t = ", ".join(str(x) for x in dicts.get("W_triggers", [])[:10])
+    p_t = ", ".join(str(x) for x in dicts.get("P_triggers", [])[:10])
+    f_t = ", ".join(str(x) for x in dicts.get("F_triggers", [])[:10])
+    b_t = ", ".join(str(x) for x in dicts.get("Bridge_triggers", [])[:10])
+    s_t = ", ".join(str(x) for x in dicts.get("Strong_inference_triggers", [])[:8])
 
     # --- Правила переключений ---
-    switch_rules = p.get("switch_detection", {}).get("rules", [])
-    switches_text = ""
-    for rule in switch_rules:
+    rules = p.get("switch_detection", {}).get("rules", [])
+    rules_text = ""
+    for rule in rules:
         rid = rule.get("id", "")
-        sev_base = rule.get("severity", {}).get("base", "?")
-        sev_add = rule.get("severity", {}).get("add_if_strong_inference_language", 0)
-        explain_key = "explain_rm" if mode == "rm" else "explain_classical"
-        explain = rule.get(explain_key, rule.get("explain_classical", ""))
-        fix_bridge = rule.get("minimal_fix_templates", {}).get("bridge", "")
-        fix_weaken = rule.get("minimal_fix_templates", {}).get("weaken", "")
-        switches_text += (
-            f"\n  [{rid}] severity={sev_base}+{sev_add} при сильном языке вывода\n"
-            f"  Объяснение: {explain.strip()}\n"
-            f"  Мост: {fix_bridge}\n"
-            f"  Ослабление: {fix_weaken}\n"
+        title_key = "title_rm" if mode == "rm" else "title_classic"
+        title = rule.get(title_key, rule.get("title_classic", rid))
+        explain_key = "explain_rm" if mode == "rm" else "explain_classic"
+        explain = rule.get(explain_key, rule.get("explain_classic", "")).strip()
+        sev = rule.get("severity", {}).get("base", "?")
+        sev_add = rule.get("severity", {}).get("if_has_tag_S_add", 0)
+        fix = rule.get("minimal_fix", {})
+        fix_w = fix.get("weaken", "")
+        fix_b = fix.get("add_bridge", "")
+        rules_text += (
+            f"\n  [{rid}] severity={sev}+{sev_add} при маркере S\n"
+            f"  Заголовок: {title}\n"
+            f"  Объяснение: {explain}\n"
+            f"  Ослабление: {fix_w}\n"
+            f"  Мост: {fix_b}\n"
         )
 
-    # --- Формат отчёта ---
-    reporting = p.get("reporting", {})
-    sections = reporting.get("required_sections_order", [])
+    # --- Структура отчёта ---
+    sections = p.get("output", {}).get("report_structure", {}).get("sections_order", [])
     sections_text = "\n".join(f"  {s}" for s in sections)
 
-    task_map_fmt = reporting.get("task_map_constraints", {})
-    task_map_max = task_map_fmt.get("max_lines", 12)
+    # --- Команды ---
+    commands_block = (
+        "  explain S{n}    — развернуть конкретную склейку\n"
+        "  context pX-bY  — показать блоки до/после\n"
+        "  bridges S{n}   — какие мосты возможны\n"
+        "  weaken S{n}    — как ослабить вывод\n"
+        "  strengthen S{n}— что добавить чтобы вывод стал законным"
+    )
 
-    switch_fields = reporting.get("switch_item_format", {}).get("must_include_fields", [])
-    switch_fields_text = "\n".join(f"  • {f}" for f in switch_fields)
-
-    no_switches_msg = reporting.get("if_no_switches_found", {}).get("output", "")
-
-    # --- Команды взаимодействия ---
-    commands = p.get("interaction", {}).get("commands_supported", [])
-    commands_text = ""
-    for cmd in commands:
-        commands_text += f"  {cmd.get('syntax','')}: {cmd.get('meaning','')}\n"
-
-    # --- Ворота качества ---
-    gates = p.get("quality_gates", [])
-    gates_text = "\n".join(f"  - {g}" for g in gates)
-
-    prompt = f"""You are a scientific article analyzer. You detect hidden logical switches between incompatible mathematical tasks (WAVE, PROB, FACT) in quantum and quantum-like reasoning.
+    prompt = f"""You are a scientific article analyzer. You detect hidden logical switches between incompatible mathematical tasks (WAVE/PROB/FACT) in quantum and quantum-like reasoning.
 
 {lang_block}
 
 {mode_block}
 
 ═══════════════════════════════════════
-ТРИ ЗАДАЧИ (не смешивай без явного моста):
+МЕТКИ ЗАДАЧ:
 {tasks_text}
-ВАЖНО — метка FACT:
-  Ставь ТОЛЬКО если есть хотя бы одно из: {fact_must}
-  Иначе предпочитай: {fact_otherwise}
 
-═══════════════════════════════════════
-ЧЕТЫРЕ ДИСЦИПЛИНЫ (анализируй каждый блок по всем четырём):
+МЕТКИ ДИСЦИПЛИН (анализируй каждый блок по всем четырём):
 {disc_text}
 
 ═══════════════════════════════════════
-ТИПЫ МОСТОВ (только явное присутствие в тексте считается мостом):
-{bridge_text}
-Правило: {bridge_rule}
-
-═══════════════════════════════════════
-РОЛИ БЛОКОВ (определяй роль каждого блока перед анализом переключений):
-{roles_text}
-ВАЖНО: Не помечай переключения внутри блоков с ролью DEFINITION.
-Только блоки с ролью INFERENCE могут быть источником переключений.
+ТРИГГЕРНЫЕ СЛОВА (подсказки — решение принимай по смыслу, не только по словам):
+  W: {w_t}
+  P: {p_t}
+  F: {f_t}
+  BRIDGE: {b_t}
+  STRONG: {s_t}
 
 ═══════════════════════════════════════
 ПРАВИЛА ПЕРЕКЛЮЧЕНИЙ:
-{switches_text}
+{rules_text}
 
 ═══════════════════════════════════════
-ОБЯЗАТЕЛЬНЫЕ РАЗДЕЛЫ ОТЧЁТА (строго в этом порядке):
+СТРУКТУРА ОТЧЁТА (строго в этом порядке):
 {sections_text}
 
-КАРТА ЗАДАЧ: максимум {task_map_max} строк, сжатый формат (не перечисляй все блоки).
+Для каждого найденного переключения обязательно укажи:
+  • Номер (S1, S2, ...)
+  • Локация: страница + block_id (p{{page}}-b{{n}}) + якорь (первые слова)
+  • Точная цитата из текста (1–2 предложения)
+  • Какие задачи склеены (W→F или P→F)
+  • Дисциплины в блоке (M/T/X/A словами)
+  • Есть ли мост: нет/да (какой)
+  • Что переносится через границу (1 строка)
+  • Почему это переключение (1–2 предложения)
+  • Минимальная правка: мост или ослабление
 
-ФОРМАТ КАЖДОГО ПЕРЕКЛЮЧЕНИЯ (все поля обязательны):
-{switch_fields_text}
-
-ЕСЛИ ПЕРЕКЛЮЧЕНИЙ НЕ НАЙДЕНО:
-{no_switches_msg}
+В конце отчёта всегда добавляй раздел «Команды для уточнений»:
+{commands_block}
 
 ═══════════════════════════════════════
-КОМАНДЫ ДЛЯ УТОЧНЕНИЙ (раздел E — всегда включай в конец отчёта):
-{commands_text}
-═══════════════════════════════════════
-ТРЕБОВАНИЯ К КАЧЕСТВУ:
-{gates_text}
-
-Точность важнее полноты. Не выдумывай переключения. Сообщай только то, что подтверждается структурой рассуждения.
+ВАЖНО:
+  - Никогда не выводи markdown-таблицы.
+  - Никогда не выводи сырые теги W/P/F — только полные слова с объяснением.
+  - Не называй «логическим противоречием» если текст не выводит A и не-A в одной задаче.
+  - Не помечай переключения внутри блоков с чистыми определениями/постулатами.
+  - Точность важнее полноты. Не выдумывай переключения.
+  - ВСЕГДА выполняй анализ независимо от длины текста.
 """
     return prompt
