@@ -1,0 +1,262 @@
+version: "0.1"
+name: "RM Switch Finder (Wave/Fact, Prob/Outcome)"
+language_default: "ru"
+
+goals:
+  - "Find hidden switching steps between incompatible mathematical tasks/descriptions."
+  - "Flag over-strong conclusions that rely on hidden switching."
+  - "Do not choose an interpretation; diagnose structure of reasoning."
+
+modes:
+  output_styles:
+    - id: "plain"
+      description: "No RM terms; operational/mathematical language."
+    - id: "rm"
+      description: "Uses RM vocabulary (incompatibility, strictness break, third-type knowledge)."
+
+segmentation:
+  unit: "sentence"
+  notes:
+    - "Process PDF text into sentences; keep formula lines as separate sentences."
+    - "Also scan figure captions if present."
+
+tags:
+  # Core task-tags
+  - id: "W"
+    name: "wave_branch"
+    meaning: "Wave/branch/amplitude/superposition/unitary reasoning."
+  - id: "P"
+    name: "probabilistic"
+    meaning: "Probability/distribution/typicality/frequency reasoning."
+  - id: "E"
+    name: "event_fact"
+    meaning: "Outcome/fact/record/was/happened/unique history statements."
+  - id: "B"
+    name: "bridge"
+    meaning: "Explicit bridge: measurement/registration/postselection/classical communication."
+
+  # Strength tag (helps rate overreach)
+  - id: "S"
+    name: "strong_inference"
+    meaning: "Must/uniquely/only possibility/cannot be otherwise."
+
+detection:
+  dictionaries:
+    W_triggers:
+      # Words
+      - "wave function"
+      - "state vector"
+      - "superposition"
+      - "unitary"
+      - "unitary evolution"
+      - "schrödinger"
+      - "interference"
+      - "amplitude"
+      - "coherence"
+      - "decoherence"
+      - "branch"
+      - "branches"
+      - "branching"
+      - "ket"
+      - "bra"
+      - "Hilbert space"
+      # Symbols (regex-like; implement with contains/regex in code)
+      - "Ψ"
+      - "ψ"
+      - "|"
+      - "⟩"
+      - "⟨"
+      - "U("
+      - "U†"
+      - "⊗"
+
+    P_triggers:
+      - "probability"
+      - "probabilities"
+      - "Born rule"
+      - "distribution"
+      - "conditional probability"
+      - "likelihood"
+      - "typical"
+      - "measure"
+      - "almost surely"
+      - "with probability"
+      - "expectation"
+      - "variance"
+      - "frequency"
+      - "relative frequency"
+      - "ensemble"
+      - "random variable"
+      - "stochastic"
+
+    E_triggers:
+      - "outcome"
+      - "result"
+      - "record"
+      - "observed"
+      - "measured"
+      - "registered"
+      - "obtains"
+      - "we obtain"
+      - "we got"
+      - "the coin was"
+      - "must have been"
+      - "happened"
+      - "is a fact"
+      - "the device shows"
+      - "the pointer indicates"
+      - "the lab contains a record"
+      - "Alice gets"
+      - "Bob gets"
+      - "w = ok"
+      - "w̄ = ok"
+      - "ok"
+      - "fail"
+      - "heads"
+      - "tails"
+
+    Bridge_triggers:
+      # Must be operational / explicitly linking tasks
+      - "measurement is performed"
+      - "is measured"
+      - "was measured"
+      - "is observed"
+      - "was observed"
+      - "is registered"
+      - "recorded"
+      - "registration"
+      - "postselect"
+      - "post-selection"
+      - "conditioning on obtaining"
+      - "conditional on obtaining"
+      - "we condition on"
+      - "classical communication"
+      - "exchange of classical information"
+      - "compare the records"
+      - "compare logs"
+      - "announce the result"
+      - "send the result"
+      - "receive the message"
+
+    Strong_inference_triggers:
+      - "must"
+      - "uniquely"
+      - "only possibility"
+      - "cannot be otherwise"
+      - "it follows that"
+      - "therefore"
+      - "hence"
+      - "implies"
+      - "forces"
+      - "rules out"
+
+  tagging_rules:
+    - id: "tag_W"
+      when_any_contains: "W_triggers"
+      add_tags: ["W"]
+
+    - id: "tag_P"
+      when_any_contains: "P_triggers"
+      add_tags: ["P"]
+
+    - id: "tag_E"
+      when_any_contains: "E_triggers"
+      add_tags: ["E"]
+
+    - id: "tag_B"
+      when_any_contains: "Bridge_triggers"
+      add_tags: ["B"]
+
+    - id: "tag_S"
+      when_any_contains: "Strong_inference_triggers"
+      add_tags: ["S"]
+
+findings:
+  # Core incompatibility findings (only first two transitions for now)
+  rules:
+    - id: "F1_prob_to_fact_without_bridge"
+      description: "P→E step without explicit bridge."
+      when:
+        sentence_has_all_tags: ["P", "E"]
+        sentence_lacks_tag: "B"
+      severity:
+        base: 3
+        if_has_tag_S_add: 2
+      output:
+        plain:
+          title: "Hidden switch: probability → outcome-fact (no explicit measurement/registration)"
+          explain: >
+            This sentence mixes probabilistic statements with outcome/fact statements without
+            an explicit operational bridge (measurement/record/postselection/classical message).
+          ask_for_bridge: >
+            Point to where the outcome is registered/selected/communicated. If absent, the conclusion
+            is stronger than what the probabilistic part alone supports.
+        rm:
+          title: "Скрытый переход: вероятность → наблюдаемый исход (нарушение строгой непрерывности)"
+          explain: >
+            В одном шаге смешаны несовместимые задачи (вероятностная и фактовая) без явного моста.
+            Это фиксируется как нарушение строгости и ввод нового знания в ходе рассуждения.
+          ask_for_bridge: >
+            Укажите место измерения/регистрации/постселекции (мост). Без него вывод является «слишком сильным».
+
+    - id: "F2_wave_to_fact_without_bridge"
+      description: "W→E step without explicit bridge."
+      when:
+        sentence_has_all_tags: ["W", "E"]
+        sentence_lacks_tag: "B"
+      severity:
+        base: 3
+        if_has_tag_S_add: 2
+      output:
+        plain:
+          title: "Hidden switch: wave/branch/amplitude → fact/history (no explicit bridge)"
+          explain: >
+            The sentence moves from wave/branch bookkeeping to a statement of unique fact/history
+            without explicitly indicating the operational step that licenses this move.
+          ask_for_bridge: >
+            Identify the step where the description becomes an outcome-level fact (measurement/record).
+            Otherwise treat the conclusion as not uniquely justified.
+        rm:
+          title: "Скрытый переход: волновое/ветвистое описание → факт/история (без моста)"
+          explain: >
+            Ветви/амплитуды используются как основание утверждения о единственном факте/прошлом без явного моста.
+            Это типичная «склейка» несовместимых задач.
+          ask_for_bridge: >
+            Укажите явный мост, иначе вывод надо ослабить до совместимости, а не уникальности.
+
+    - id: "F3_overstrong_inference_marker"
+      description: "Strong inference language near a detected switch."
+      when:
+        sentence_has_tag: "S"
+        sentence_has_any_tag: ["W", "P"]
+        sentence_has_tag: "E"
+      severity:
+        base: 2
+      output:
+        plain:
+          title: "Over-strong conclusion marker"
+          explain: >
+            Strong necessity language ("must/uniquely/only") appears in a mixed-task sentence.
+            This often indicates an overreach caused by a hidden switch.
+        rm:
+          title: "Маркер «слишком сильного вывода»"
+          explain: >
+            Формулировки типа must/uniquely/only часто появляются именно там, где произошла склейка задач.
+
+post_processing:
+  ranking:
+    primary: "severity"
+    secondary: "count_of_triggers"
+  grouping:
+    by_page: true
+    by_section_heading_if_available: true
+
+report_template:
+  include:
+    - "top_findings_summary"
+    - "list_findings_with_quotes"
+    - "suggested_weakened_rephrasings"
+  rephrase_templates:
+    weaken_unique_to_compatible:
+      - plain: "At most, this shows compatibility with X, not that X is uniquely fixed."
+      - rm: "Максимум: совместимость с X, но не уникальная фиксация X."

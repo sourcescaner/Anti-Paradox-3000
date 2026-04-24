@@ -1,0 +1,490 @@
+# rm_bot_policy_v0.3.3.yml
+# Relative Mathematics (RM) diagnostic policy for Antiparadox-3000
+#
+# Purpose:
+# - Diagnose hidden switches between incompatible mathematical tasks inside one reasoning line.
+# - Focus (v0.3.x): two core switches
+#   (1) PROBABILITY → OUTCOME/FACT   (P→F)
+#   (2) WAVE/BRANCH/AMPLITUDE → FACT/HISTORY (W→F)
+#
+# Output:
+# - Must be readable when copied into Google Docs / Telegram.
+# - NO markdown tables. Use numbered sections + bullets.
+# - Provide exact locations via (page, block_id) and short quotes.
+#
+# Two modes:
+# - classic: no RM terminology (for mainstream readers)
+# - rm: RM terminology allowed (relative rigor, third type of knowledge, etc.)
+#
+# Notes:
+# - We do NOT introduce “meta‑observers” as entities.
+# - We do NOT rely on any single interpretation (Copenhagen/Bohm/Everett).
+# - We always track: mathematics + theoretical framing + measurement/record + participant actions
+#   (as four disciplines, not “levels”).
+
+version: "0.3.3"
+bot_name: "Antiparadox-3000"
+default_mode: "classic"     # classic | rm
+default_output_language: "ru" # user can override: ru | en | uk | ...
+quotes_language: "original"  # keep source quotes in original language for verifiability
+
+scope:
+  inputs:
+    allowed_file_types: ["pdf"]
+  switches_in_scope:
+    - "P_to_F"
+    - "W_to_F"
+  switches_out_of_scope_for_now:
+    # Can be added later (Lipkin/Klyshko prep-vs-measure etc.)
+    - "SETUP_macro_to_wave"
+    - "OBSERVED_vs_NOT_OBSERVED"
+
+# -----------------------------------------------------------------------------
+# 1) Segmentation: PDF → blocks
+# -----------------------------------------------------------------------------
+segmentation:
+  unit: "paragraph_block"
+  block_size_guidelines:
+    # How to split a page into blocks
+    max_paragraphs_per_block: 3
+    max_chars_per_block: 1200
+    keep_formula_lines_with_previous_paragraph: true
+  block_id_format: "p{page}-b{n}"   # page is 1-based in output
+  stored_fields_per_block:
+    - "page"
+    - "block_id"
+    - "raw_text"
+    - "anchor"   # first 10–15 words of block, for quick search
+    - "tags"     # task-tags (W/P/F/B/S) + discipline-tags (M/T/E/A)
+
+# -----------------------------------------------------------------------------
+# 2) Tagging: tasks + disciplines (4 disciplines simultaneously)
+# -----------------------------------------------------------------------------
+tags:
+  # Task tags (internal)
+  tasks:
+    W: "WAVE/BRANCH/AMPLITUDE (unitary evolution, superposition, branches, amplitudes)"
+    P: "PROBABILITY (Born rule, distributions, typicality, conditional probabilities)"
+    F: "FACT/OUTCOME/HISTORY (observed outcome, recorded fact, 'was tails', 'device shows', unique history)"
+    B: "BRIDGE PRESENT (explicit measurement/registration/postselection/communication step)"
+    S: "STRONG INFERENCE (must/uniquely/only) near a switch — often marks overreach"
+  # Discipline tags (for explanation; not “levels”)
+  disciplines:
+    M: "MATHEMATICS (operators, states, evolution, probabilities as formal objects)"
+    T: "THEORETICAL FRAMING (claims about what the theory 'does', 'explains', 'implies')"
+    X: "EXPERIMENT/REGISTRATION (measurement, record, device, postselection, data comparison)"
+    A: "ACTIONS (someone conditions, announces, assumes, chooses basis, selects branch, etc.)"
+
+dictionaries:
+  # WAVE / branch bookkeeping
+  W_triggers:
+    - "wave function"
+    - "state vector"
+    - "Hilbert space"
+    - "unitary"
+    - "Schrödinger"
+    - "superposition"
+    - "amplitude"
+    - "branch"
+    - "interference"
+    - "configuration space"
+    - "Ψ"
+    - "ψ"
+    - "|"
+    - "⟩"
+    - "⟨"
+    - "U("
+    - "⊗"
+
+  # Probability language
+  P_triggers:
+    - "probability"
+    - "probabilities"
+    - "Born rule"
+    - "distribution"
+    - "conditional probability"
+    - "likelihood"
+    - "typical"
+    - "measure"
+    - "almost surely"
+    - "with probability"
+    - "expectation"
+    - "variance"
+    - "frequency"
+    - "ensemble"
+    - "random variable"
+    - "stochastic"
+
+  # Outcome / fact language
+  F_triggers:
+    - "outcome"
+    - "result"
+    - "record"
+    - "observed"
+    - "measured"
+    - "registered"
+    - "obtains"
+    - "we obtain"
+    - "the coin was"
+    - "must have been"
+    - "happened"
+    - "is a fact"
+    - "the device shows"
+    - "the pointer indicates"
+    - "the lab contains a record"
+    - "Alice gets"
+    - "Bob gets"
+    - "ok"
+    - "fail"
+    - "heads"
+    - "tails"
+
+  # Bridge triggers: must be operational, explicit
+  Bridge_triggers:
+    - "measurement is performed"
+    - "is measured"
+    - "was measured"
+    - "is observed"
+    - "was observed"
+    - "is registered"
+    - "recorded"
+    - "registration"
+    - "postselect"
+    - "post-selection"
+    - "conditioning on obtaining"
+    - "conditional on obtaining"
+    - "we condition on"
+    - "compare the records"
+    - "compare logs"
+    - "announce the result"
+    - "send the result"
+    - "receive the message"
+    - "exchange of classical information"
+    - "share the data"
+
+  # Strong inference markers
+  Strong_inference_triggers:
+    - "must"
+    - "uniquely"
+    - "only possibility"
+    - "cannot be otherwise"
+    - "it follows that"
+    - "therefore"
+    - "hence"
+    - "implies"
+    - "forces"
+    - "rules out"
+
+  # Discipline cues
+  Math_cues:
+    - "operator"
+    - "eigenvalue"
+    - "eigenvector"
+    - "Hilbert"
+    - "unitary"
+    - "Schrödinger"
+    - "density matrix"
+    - "trace"
+    - "projector"
+    - "POVM"
+    - "Born rule"
+  Theory_cues:
+    - "interpretation"
+    - "ontology"
+    - "explains"
+    - "really"
+    - "in reality"
+    - "cannot consistently"
+    - "is part of the theory"
+    - "is not part of the theory"
+    - "plays no role"
+  Experiment_cues:
+    - "measurement"
+    - "device"
+    - "apparatus"
+    - "record"
+    - "pointer"
+    - "registration"
+    - "postselection"
+    - "compare"
+    - "data"
+  Action_cues:
+    - "assume"
+    - "suppose"
+    - "condition"
+    - "choose"
+    - "announce"
+    - "select"
+    - "treat as"
+    - "identify as"
+
+tagging_rules:
+  - id: "tag_W"
+    when_any_contains: "W_triggers"
+    add_tags: ["W"]
+  - id: "tag_P"
+    when_any_contains: "P_triggers"
+    add_tags: ["P"]
+  - id: "tag_F"
+    when_any_contains: "F_triggers"
+    add_tags: ["F"]
+  - id: "tag_B"
+    when_any_contains: "Bridge_triggers"
+    add_tags: ["B"]
+  - id: "tag_S"
+    when_any_contains: "Strong_inference_triggers"
+    add_tags: ["S"]
+
+  # Discipline tags (4 disciplines)
+  - id: "disc_M"
+    when_any_contains: "Math_cues"
+    add_tags: ["M"]
+  - id: "disc_T"
+    when_any_contains: "Theory_cues"
+    add_tags: ["T"]
+  - id: "disc_X"
+    when_any_contains: "Experiment_cues"
+    add_tags: ["X"]
+  - id: "disc_A"
+    when_any_contains: "Action_cues"
+    add_tags: ["A"]
+
+# -----------------------------------------------------------------------------
+# 3) Switch detection rules (block-level, not sentence-level)
+# -----------------------------------------------------------------------------
+switch_detection:
+  unit: "block"
+  candidate_generation:
+    # Candidate switch points are:
+    # - blocks that contain multiple incompatible task tags
+    # - OR boundaries between adjacent blocks with different task tags,
+    #   especially when the later block claims a strong conclusion.
+    within_block_if_tags_mixed: true
+    between_adjacent_blocks_if_tags_change: true
+
+  rules:
+    - id: "S1_P_to_F_no_bridge"
+      title_classic: "Скрытый переход: вероятность → наблюдаемый факт"
+      title_rm: "Скрытый переход: P→F (ввод нового знания / нарушение строгой непрерывности)"
+      when:
+        any_of:
+          - block_has_all_tags: ["P", "F"]
+          - adjacent_pair_has_tags:
+              left_must_have_any: ["P"]
+              right_must_have_any: ["F"]
+        and_block_lacks_tag: "B"
+      severity:
+        base: 3
+        if_has_tag_S_add: 2
+      explain_classic: >
+        В одном месте рассуждения вероятностные утверждения используются так,
+        будто из них можно получить конкретный исход/факт без явного шага измерения,
+        регистрации или постселекции. Это делает вывод «слишком сильным».
+      explain_rm: >
+        Здесь происходит склейка несовместимых задач: вероятностной и фактовой.
+        Факт появляется как новое знание в ходе рассуждения, а не как вывод по прежним правилам.
+        Без явного моста это фиксируется как нарушение строгой непрерывности.
+      bridge_request: >
+        Укажите явный мост: где именно зафиксирован исход (измерение/запись/постселекция/сравнение данных).
+      minimal_fix:
+        weaken: "Ослабить вывод до совместимости/вероятности."
+        add_bridge: "Явно добавить шаг регистрации/измерения и отметить, кто его выполняет."
+
+    - id: "S2_W_to_F_no_bridge"
+      title_classic: "Скрытый переход: волновое/ветвистое описание → факт/история"
+      title_rm: "Скрытый переход: W→F (ветви/амплитуды → уникальная история)"
+      when:
+        any_of:
+          - block_has_all_tags: ["W", "F"]
+          - adjacent_pair_has_tags:
+              left_must_have_any: ["W"]
+              right_must_have_any: ["F"]
+        and_block_lacks_tag: "B"
+      severity:
+        base: 3
+        if_has_tag_S_add: 2
+      explain_classic: >
+        Описания в терминах ветвей/амплитуд/унитарной эволюции используются как основание
+        утверждения о единственном факте/прошлом («было tails», «получено ok»)
+        без явного шага, который легализует превращение ветви в факт.
+      explain_rm: >
+        Ветвистое описание (W) подменяется фактовым (F) без предъявления моста.
+        Это типичная склейка, которая производит «слишком сильные» утверждения о единственной истории.
+      bridge_request: >
+        Где именно оформляется переход к факту: измерение/запись/условная выборка/передача результата?
+      minimal_fix:
+        weaken: "Переформулировать как 'совместимо с X', а не 'X единственно возможно'."
+        add_bridge: "Явно указать операционный шаг, который превращает описание в факт."
+
+    - id: "S3_overstrong_near_switch"
+      title_classic: "Маркер слишком сильного вывода"
+      title_rm: "Маркер: язык необходимости рядом со склейкой"
+      when:
+        block_has_tag: "S"
+        and_any_of:
+          - block_has_all_tags: ["P", "F"]
+          - block_has_all_tags: ["W", "F"]
+      severity:
+        base: 2
+      explain_classic: >
+        Формулировки must/uniquely/only часто появляются именно там, где произошла склейка задач.
+        Обычно это сигнал «перевода совместимости в уникальность».
+      explain_rm: >
+        Язык необходимости маркирует попытку сделать вывод сильнее, чем позволяет локальная строгость.
+
+# -----------------------------------------------------------------------------
+# 4) Output format (NO TABLES)
+# -----------------------------------------------------------------------------
+output:
+  general_rules:
+    - "Never output markdown tables."
+    - "Prefer short numbered sections."
+    - "Always show location: page + block_id."
+    - "Always include a short quote (1–2 sentences) from the source."
+    - "Explain the switch as: what was transferred + why it is not licensed + what bridge would license it."
+    - "If output_language != original, do NOT translate the quote unless user asks; translate only explanations."
+
+  report_structure:
+    # The bot produces two reports: classic and rm (depending on mode).
+    sections_order:
+      - "TLDR"
+      - "TASK_MAP"
+      - "SWITCH_POINTS"
+      - "TOP_OVERREACHES"
+      - "MINIMAL_FIXES"
+      - "COMMANDS"
+
+  section_templates:
+    TLDR:
+      classic: |
+        1) Коротко (TL;DR)
+        {tldr}
+      rm: |
+        1) Коротко (TL;DR, RM-режим)
+        {tldr}
+
+    TASK_MAP:
+      classic: |
+        2) Карта задач (что где происходит)
+        - WAVE (W): {wave_summary}
+        - PROB (P): {prob_summary}
+        - FACT (F): {fact_summary}
+      rm: |
+        2) Карта задач (RM)
+        - W (волновое/ветвистое): {wave_summary}
+        - P (вероятностное): {prob_summary}
+        - F (фактовое): {fact_summary}
+
+    SWITCH_POINTS:
+      classic: |
+        3) Точки переключения (склейки)
+        {switch_list}
+      rm: |
+        3) Точки переключения (RM)
+        {switch_list}
+
+    TOP_OVERREACHES:
+      classic: |
+        4) Самые «дальнодействующие» (слишком сильные) выводы
+        {overreach_list}
+      rm: |
+        4) Самые сильные склейки и переусиления (RM)
+        {overreach_list}
+
+    MINIMAL_FIXES:
+      classic: |
+        5) Минимальные исправления (мост / ослабление)
+        {fix_list}
+      rm: |
+        5) Минимальные исправления (RM)
+        {fix_list}
+
+    COMMANDS:
+      classic: |
+        6) Уточняющие команды по этому PDF
+        - explain S{n}     — развернуть конкретную склейку
+        - context pX-bY    — показать 1–2 блока до/после
+        - bridges S{n}     — какие мосты возможны и какой минимальный
+        - weaken S{n}      — как ослабить вывод, чтобы не было незаконного переноса
+        - strengthen S{n}  — что нужно ДОБАВИТЬ (как допущение), чтобы вывод стал законным
+        - classic S{n}     — ответ без терминов RM
+        - rm S{n}          — тот же ответ в терминологии RM
+      rm: |
+        6) Команды (RM)
+        - explain S{n}
+        - context pX-bY
+        - bridges S{n}
+        - weaken S{n}
+        - strengthen S{n}
+        - classic S{n}
+        - rm S{n}
+
+# -----------------------------------------------------------------------------
+# 5) Explain / Context / Bridges / Weaken / Strengthen handlers
+# -----------------------------------------------------------------------------
+interactive_handlers:
+  explain:
+    must_include:
+      - "location"
+      - "quote"
+      - "tasks_involved"
+      - "disciplines_involved"
+      - "what_is_transferred"
+      - "why_not_licensed"
+      - "minimal_bridge"
+      - "minimal_weaken"
+  context:
+    window_blocks_before: 2
+    window_blocks_after: 2
+    show_quotes_only: true
+    max_total_chars: 2000
+
+  bridges:
+    bridge_menu:
+      - id: "measurement_registration"
+        label: "Явная регистрация/измерение"
+        requires: ["X"]
+      - id: "postselection_conditioning"
+        label: "Постселекция / условный отбор"
+        requires: ["X", "A"]
+      - id: "data_exchange_then_statistics"
+        label: "Передача результатов и только потом вывод"
+        requires: ["X", "A"]
+      - id: "extra_axiom_or_rule"
+        label: "Допущение/постулат (явно пометить как внешнее)"
+        requires: ["T", "A"]
+
+  weaken:
+    patterns:
+      unique_to_compatible:
+        classic: "Здесь максимум следует: «совместимо с X», но не «X единственно возможно»."
+        rm: "Максимум: совместимость с X, но не уникальная фиксация X (иначе — нарушение строгой непрерывности)."
+      fact_to_probability:
+        classic: "Переформулируйте факт как вероятностное утверждение или как условное: «если зарегистрировано…, то…»."
+        rm: "Верните утверждение из F в P (или оформите мостом), иначе это ввод нового знания без фиксации."
+
+  strengthen:
+    # Strengthening = show what extra assumption would legalize the move.
+    # MUST label it as an added assumption, not derived from the original text.
+    template:
+      classic: |
+        Чтобы сделать вывод законным, нужно ДОБАВИТЬ допущение:
+        - {assumption}
+        Тогда вывод становится допустимым внутри расширенной схемы, но это уже другой набор посылок.
+      rm: |
+        Для легализации перехода нужен внешний мост/допущение:
+        - {assumption}
+        Это добавляет новый слой знания и меняет множество допустимых шагов (относительная строгость).
+
+# -----------------------------------------------------------------------------
+# 6) Post-processing: ranking and grouping
+# -----------------------------------------------------------------------------
+post_processing:
+  ranking:
+    primary: "severity"
+    secondary: "count_of_triggers"
+  grouping:
+    by_page: true
+    by_section_heading_if_available: true
+  max_findings_in_report: 12
+

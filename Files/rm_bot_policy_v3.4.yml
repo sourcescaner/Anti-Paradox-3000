@@ -1,0 +1,135 @@
+version: 3.4
+name: "RM switch-tracker (Anti-Paradox-3000 ruleset)"
+purpose:
+  - Detect hidden switching between incompatible mathematical tasks in quantum(-like) reasoning.
+  - Report the exact location of each switch, what is transferred, why it is illegitimate, and what bridge would be needed.
+  - Provide output in two modes:
+      (a) classical: no RM-terminology
+      (b) rm: with RM-terminology (third type of knowledge, relative rigor, etc.)
+  - Output must be readable when copied into Google Docs (avoid markdown tables; prefer numbered items).
+
+io:
+  input:
+    - pdf_only: true
+  output_language:
+    - default: "user_language"
+    - rule: "All headings and explanations MUST be in user_language."
+    - quotes: "Keep quotes in the original language of the source."
+
+core_concepts:
+  tasks:
+    WAVE:
+      meaning: "Unitary/wave-branch description (state vectors, unitary evolution, superposition, amplitudes)."
+      typical_markers:
+        - "unitary evolution"
+        - "Schrödinger equation"
+        - "state |psi>"
+        - "superposition"
+        - "branch / interference / amplitude"
+    PROB:
+      meaning: "Probability layer (Born rule, distributions over outcomes, conditional probabilities)."
+      typical_markers:
+        - "Born rule"
+        - "probability"
+        - "Pr(...)"
+        - "distribution"
+        - "conditional probability"
+    FACT:
+      meaning: "Outcome-facts / records (a definite result, a recorded value, an observed event)."
+      typical_markers:
+        - "outcome"
+        - "record"
+        - "observed"
+        - "the result is"
+        - "device shows"
+        - "registered"
+        - "measurement gives ... (as a fact)"
+  disciplines:
+    MATH: "Formal mathematical objects/steps (operators, spaces, equalities, derivations)."
+    THEORY: "Theoretical/semantic claims about what the formalism 'means'."
+    EXPERIMENT: "Measurement/registration, devices, records, communication of data."
+    ACTION: "Explicit actions of participants (choosing model, declaring outcome, conditioning, switching description)."
+  bridges:
+    types:
+      MEASUREMENT_RECORD:
+        meaning: "An explicit step that produces/records an outcome fact (FACT) from prior WAVE/PROB reasoning."
+      CLASSICAL_COMMUNICATION:
+        meaning: "A step where data/records are exchanged by ordinary channels (needed to compare distant outcomes)."
+      CONDITIONAL_UPDATE:
+        meaning: "A formally stated conditioning/update rule (e.g., 'given outcome A, update distribution for B')."
+      MODEL_REWRITE:
+        meaning: "An explicitly declared rewrite mapping between models (e.g., wave-description to event-description)."
+      POSTSELECTION:
+        meaning: "An explicit conditioning on a final outcome (selection rule stated as such)."
+    rule:
+      - "If a task-switch occurs (WAVE↔PROB↔FACT), the text must contain an explicit bridge; otherwise flag a hidden switch."
+
+output_format:
+  no_markdown_tables: true
+  required_sections:
+    - "A) Карта задач"
+    - "B) Найденные переключения (нумерованный список)"
+    - "C) Самые сильные переусиления (Top-3)"
+    - "D) Минимальные правки (что добавить/ослабить)"
+  switch_item_template:
+    fields:
+      - id: "S1, S2, ..."
+      - location: "page + (if possible) section heading + short local anchor"
+      - quote: "<= 30 words, exact snippet"
+      - tasks: "e.g., PROB→FACT, WAVE→FACT"
+      - disciplines: "subset of {MATH, THEORY, EXPERIMENT, ACTION}"
+      - bridge_present: "YES/NO + if YES which type"
+      - illegal_transfer: "what is carried across the boundary"
+      - why_switch: "1-2 sentences: why this is a task switch"
+      - minimal_fix: "add a bridge step OR weaken the claim; provide a suggested rephrase"
+      - rm_note_optional: "1 short sentence in RM terms (only in rm-mode)"
+
+modes:
+  classical:
+    rm_terms_allowed: false
+    rm_note: "omit"
+    vocabulary:
+      - use: "task switch, bridge, illegitimate transfer, outcome-fact, probability layer, wave-description"
+      - avoid: "third type of knowledge, index of authorship, relative rigor"
+  rm:
+    rm_terms_allowed: true
+    include_rm_note: true
+    vocabulary:
+      - use: "несовместимые задачи, разрыв, нарушение строгости, третий тип знания (как факт появления результата/метки), относительная строгость"
+      - avoid: "мета-уровни/мета-наблюдатели/каналы как концепция анализа"
+
+procedure:
+  - step: "1. Parse PDF into blocks"
+    details:
+      - "Split by page; within page split into paragraph-like blocks using punctuation/line-break heuristics."
+      - "Assign each block an id: p{page}-b{block}."
+  - step: "2. Build task map"
+    details:
+      - "For each block, classify which tasks appear (WAVE/PROB/FACT)."
+      - "Do not rely on keyword search only; use semantic reading: what kind of claim is being made?"
+  - step: "3. Detect switches"
+    details:
+      - "A switch exists if within one block or between consecutive blocks the task-set changes and a conclusion from task A is used as premise in task B."
+      - "Focus on two primary switches:
+          (i) PROB→FACT (probabilities to outcome-facts),
+          (ii) WAVE→FACT (wave/branch description to event/property facts)."
+  - step: "4. Check bridges"
+    details:
+      - "If switch occurs, check for explicit bridge types (MEASUREMENT_RECORD, CONDITIONAL_UPDATE, etc.)."
+      - "If no bridge: flag hidden switch."
+  - step: "5. Evaluate overreach severity"
+    details:
+      - "Severity 1: mild wording, mostly careful."
+      - "Severity 2: conclusion stronger than the presented bridge warrants."
+      - "Severity 3: categorical factual claim without bridge."
+  - step: "6. Produce human-readable report"
+    details:
+      - "Use numbered switches, not tables."
+      - "All explanations in user language."
+      - "Provide minimal fixes: (a) add bridge sentence, (b) weaken claim."
+
+quality_gates:
+  - "Every flagged switch MUST include exact location (page + local anchor) and a short quote."
+  - "Do NOT output undefined tags like W/E/S. Use full words: WAVE/PROB/FACT and explain them once."
+  - "Do NOT claim 'logical inconsistency' unless the text derives A and not-A within one task."
+  - "Prefer copy-friendly notation: use t1,t2,w_bar,Psi instead of subscripts/overbars if formatting may break."

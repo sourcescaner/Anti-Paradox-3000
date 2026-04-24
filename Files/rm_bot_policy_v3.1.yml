@@ -1,0 +1,283 @@
+rm_bot_policy:
+  version: "0.3"
+  name: "RM diagnostic policy (Wave↔Particle, Probability↔Outcome)"
+  scope:
+    # В этой версии сознательно фокусируемся только на 2 переходах:
+    - "Wave/branch/amplitude ↔ event/fact (wave→particle/event talk)"
+    - "Probability/distribution ↔ observed outcome/fact (probability→outcome)"
+  output_languages:
+    default: "ru"
+    supported: ["ru", "en", "uk"]  # язык выбирает пользователь
+  output_modes:
+    - id: "rm"
+      description: "Вывод с терминологией RM (строгость, склейка, мост, третий тип знания)."
+    - id: "classic"
+      description: "Вывод без терминов RM: 'скрытый переход', 'недосказанный шаг', 'усиление вывода'."
+
+  # ----------------------------
+  # 0) ОБЯЗАТЕЛЬНЫЙ ФОРМАТ ВХОДА
+  # ----------------------------
+  input:
+    allowed: ["pdf"]
+    required_preprocessing:
+      - "extract_text_with_page_numbers"
+      - "split_into_blocks: paragraph"
+      - "assign_block_ids: p{page}-b{index}"
+      - "keep_original_quote_verbatim"
+
+  # ---------------------------------------
+  # 1) ПРИНЦИП: 4 ДИСЦИПЛИНЫ ОДНОВРЕМЕННО
+  # ---------------------------------------
+  # Это НЕ уровни и не мета-уровни. Это четыре независимые дисциплины,
+  # которые нужно видеть рядом в каждом абзаце, когда это возможно.
+  disciplines:
+    MATH:
+      description: "Формальные объекты/операции: состояния, амплитуды, вероятности, унитарность, проекции, вычисления."
+    THEORY:
+      description: "Заявленная модель/интерпретационный язык статьи: 'unitary evolution', 'collapse', 'branches', 'Bohm', 'Everett', 'decoherence', etc."
+    EXPERIMENT:
+      description: "Фиксация фактов/результатов/записей: 'measured', 'recorded', 'pointer indicates', 'obtains result', 'registered'."
+    ACTIONS:
+      description: "Действия участников рассуждения/эксперимента: выбор базиса/набора измерений/постселекции/условного рассмотрения/обмена данными."
+
+  # -----------------------------
+  # 2) РАЗМЕТКА АБЗАЦЕВ (ТАБЛИЦА)
+  # -----------------------------
+  block_annotation:
+    required_fields_per_block:
+      - "block_id"          # p{page}-b{index}
+      - "page"
+      - "section_heading_if_any"
+      - "quote_1_to_3_sentences"   # короткая цитата
+      - "disciplines_present"      # subset of [MATH, THEORY, EXPERIMENT, ACTIONS]
+      - "task_labels"              # subset of [WAVE, PROB, FACT]
+      - "bridge_present"           # yes/no/unclear
+      - "bridge_type_if_any"       # measurement/record/postselection/classical-communication/explicit-rule/none
+      - "claim_strength"           # weak/medium/strong (по лексике)
+      - "notes"
+
+  # --------------------------------------------------
+  # 3) МЕТКИ ЗАДАЧ (МИНИМУМ, БЕЗ ЛИШНЕГО)
+  # --------------------------------------------------
+  tasks:
+    WAVE:
+      meaning: "волновое/ветвистое/амплитудное описание (Ψ, |ψ⟩, унитарность, интерференция, ветви)"
+    PROB:
+      meaning: "вероятностное описание (Born rule, distributions, conditional probabilities, typicality, frequencies)"
+    FACT:
+      meaning: "факт/исход/запись/история (получено ok, было tails, recorded result, definite outcome)"
+
+  # ---------------------------------------------------
+  # 4) ТРИГГЕРЫ (НЕ ТОЛЬКО ПО СЛОВАМ, НО И ПО СМЫСЛУ)
+  # ---------------------------------------------------
+  triggers:
+    wave_markers:
+      regex_or_contains:
+        - "Ψ"
+        - "ψ"
+        - "\\|.*?⟩"
+        - "Hilbert"
+        - "unitary"
+        - "Schrödinger"
+        - "amplitude"
+        - "superposition"
+        - "interference"
+        - "branch"
+        - "decoherence"
+        - "projection operator"
+        - "Born-rule-derived state"   # если в тексте так пишут
+    prob_markers:
+      regex_or_contains:
+        - "probability"
+        - "probabilities"
+        - "distribution"
+        - "conditional probability"
+        - "likelihood"
+        - "typical"
+        - "almost surely"
+        - "measure (theory)"          # аккуратно: только если в контексте вероятности
+        - "frequency"
+        - "ensemble"
+        - "stochastic"
+        - "random variable"
+    fact_markers:
+      regex_or_contains:
+        - "outcome"
+        - "result"
+        - "record"
+        - "registered"
+        - "observed"
+        - "measured"
+        - "the device shows"
+        - "the pointer indicates"
+        - "the lab contains a record"
+        - "obtains"
+        - "we obtain"
+        - "it happened"
+        - "is a fact"
+        - "must have been"
+        - "heads"
+        - "tails"
+        - "ok"
+        - "fail"
+    bridge_markers:
+      # ЯВНЫЙ МОСТ = текст явно показывает, как вводится факт/исход или как связываются задачи
+      regex_or_contains:
+        - "measurement is performed"
+        - "a measurement of"
+        - "is registered"
+        - "recorded in"
+        - "postselect"
+        - "post-selection"
+        - "conditioning on obtaining"
+        - "we condition on"
+        - "classical communication"
+        - "exchange of classical information"
+        - "compare the records"
+        - "announce the result"
+        - "send the result"
+        - "receive the message"
+        - "we now take as given that"     # явная смена предпосылок
+    strong_claim_markers:
+      regex_or_contains:
+        - "must"
+        - "uniquely"
+        - "only possibility"
+        - "cannot be otherwise"
+        - "it follows that"
+        - "therefore"
+        - "hence"
+        - "implies"
+        - "forces"
+        - "rules out"
+
+  # ---------------------------------------
+  # 5) ПРАВИЛА РАСПОЗНАВАНИЯ МЕТОК В АБЗАЦЕ
+  # ---------------------------------------
+  tagging:
+    task_labels:
+      - if_any: "wave_markers"
+        add: ["WAVE"]
+      - if_any: "prob_markers"
+        add: ["PROB"]
+      - if_any: "fact_markers"
+        add: ["FACT"]
+    bridge:
+      - if_any: "bridge_markers"
+        set_bridge_present: "yes"
+        set_bridge_type: "infer_from_context"  # measurement/record/postselection/classical-communication/explicit-rule
+      - else:
+        set_bridge_present: "no"
+    claim_strength:
+      - if_any: "strong_claim_markers"
+        set_claim_strength: "strong"
+      - else:
+        set_claim_strength: "weak"
+
+  # -----------------------------------------
+  # 6) ОСНОВНЫЕ “НАХОДКИ” (ТОЧКИ РАЗРЫВА/СКЛЕЙКИ)
+  # -----------------------------------------
+  findings:
+    rules:
+      - id: "SW1_prob_to_fact_no_bridge"
+        when:
+          has_all_task_labels: ["PROB", "FACT"]
+          bridge_present_is: "no"
+        severity:
+          base: 3
+          add_if_claim_strength_strong: 2
+        output:
+          rm:
+            title: "Склейка: вероятность → наблюдаемый исход без моста (нарушение строгой непрерывности)"
+            explanation: >
+              В одном абзаце смешаны вероятностные утверждения и утверждения о факте/исходе,
+              но не предъявлен явный мост (измерение/регистрация/постселекция/обмен данными),
+              который вводит новый факт как новую предпосылку. Это типичный источник «слишком сильных» выводов.
+            what_to_request: "Покажите место, где исход зафиксирован (и кем), и где он становится допустимой посылкой."
+            weaken_template: "Максимум: совместимость с исходом, а не вывод исхода из вероятности."
+          classic:
+            title: "Hidden switch: probability → outcome-fact (no explicit step shown)"
+            explanation: >
+              The paragraph mixes probabilistic claims with outcome/fact claims but does not show
+              the explicit step that introduces the outcome (measurement/record/postselection/communication).
+            what_to_request: "Point to where the outcome is registered/selected and becomes a premise."
+            weaken_template: "At most: compatibility, not derivation of a unique outcome."
+
+      - id: "SW2_wave_to_fact_no_bridge"
+        when:
+          has_all_task_labels: ["WAVE", "FACT"]
+          bridge_present_is: "no"
+        severity:
+          base: 3
+          add_if_claim_strength_strong: 2
+        output:
+          rm:
+            title: "Склейка: волновое/ветвистое описание → факт/история без моста"
+            explanation: >
+              Ветви/амплитуды используются как основание утверждения о единственном факте/прошлом,
+              но не показано, где именно описание превращается в факт (через регистрацию/запись/выбор исхода).
+            what_to_request: "Покажите явный шаг фиксации факта и правило переноса выводов через него."
+            weaken_template: "Ослабить: «совместимо с …», а не «однозначно следует …»."
+          classic:
+            title: "Hidden switch: wave/branch bookkeeping → unique fact/history (no explicit step shown)"
+            explanation: >
+              Branch/amplitude reasoning is used to claim a unique outcome/history without explicitly showing
+              the operational step that licenses turning it into a fact.
+            what_to_request: "Identify the explicit step where the description becomes an outcome-level fact."
+            weaken_template: "Weaken: compatibility rather than uniqueness."
+
+      - id: "SW3_overstrong_language_near_switch"
+        when:
+          claim_strength_is: "strong"
+          has_any_task_labels: ["WAVE", "PROB"]
+          has_task_label: "FACT"
+        severity:
+          base: 2
+        output:
+          rm:
+            title: "Маркер «слишком сильного вывода» рядом со склейкой"
+            explanation: >
+              Лексика «must/uniquely/only» в смешанном абзаце обычно означает,
+              что вывод усилен за счёт неявного перехода между несовместимыми задачами.
+          classic:
+            title: "Over-strong conclusion marker"
+            explanation: "Necessity language often signals an overreach caused by a hidden switch."
+
+  # -------------------------------------------------
+  # 7) КАК ОТЧЁТ ДОЛЖЕН ВЫГЛЯДЕТЬ (НЕ СПИСОК ТЕГОВ!)
+  # -------------------------------------------------
+  report:
+    required_sections_in_order:
+      - "TLDR"
+      - "Task map (where WAVE / PROB / FACT appear)"
+      - "Switch points (table)"
+      - "Top 3 strongest overreaches"
+      - "Minimal fixes (bridges or weakening)"
+    formatting:
+      no_raw_tag_lists: true
+      always_include_block_ids: true
+      always_include_page_numbers: true
+      always_quote_exact_text: true
+    switch_points_table_columns:
+      - "block_id"
+      - "page"
+      - "quote"
+      - "tasks_in_block"
+      - "disciplines_present"
+      - "bridge_present"
+      - "what_is_illegally_transferred"
+      - "why_it_is_a_switch (short)"
+      - "how_to_fix (bridge or weaken)"
+    transfer_detection_guidance:
+      # Не “ищи слова”, а фиксируй перенос смысла:
+      - "If a paragraph concludes a definite outcome/history, mark what earlier probabilistic/branch claim it relies on."
+      - "If the paragraph uses conditionalization language, require explicit conditioning event (record/selection)."
+      - "If a later paragraph treats earlier 'as if measured', mark missing measurement/record step."
+
+  # ------------------------------------------
+  # 8) ЧЕСТНЫЕ ОГРАНИЧЕНИЯ (НО БЕЗ САБОТАЖА)
+  # ------------------------------------------
+  limitations:
+    - "The tool does not decide which interpretation is true."
+    - "The tool diagnoses continuity of reasoning and legality of transfers between incompatible tasks."
+    - "If the text is purely philosophical with no formal content, the tool can still map switches but must say 'formal bridge absent in text'."

@@ -1,0 +1,445 @@
+version: "0.3"
+name: "RM Switch Finder (Wave↔Fact, Prob↔Outcome) — copy-safe"
+language_default: "ru"
+
+goals:
+  - "Detect hidden switching between incompatible mathematical tasks (WAVE/PROB vs FACT)."
+  - "Detect missing bridges (measurement/registration/communication) and over-strong conclusions."
+  - "Keep the analysis at the math+practice interface; do NOT require choosing an interpretation."
+  - "Output must be copy-safe (NO markdown tables)."
+
+modes:
+  output_styles:
+    - id: "classic"
+      description: "No RM terms; neutral mathematical/operational language."
+    - id: "rm"
+      description: "Uses RM vocabulary (incompatibility, strictness break, third-type knowledge)."
+
+language_policy:
+  rules:
+    - "If user explicitly requests a language, output EVERYTHING in that language."
+    - "Otherwise use language_default."
+    - "Do NOT mix languages inside one report."
+
+segmentation:
+  unit: "paragraph"
+  notes:
+    - "Split PDF text by page, then by paragraphs."
+    - "Headings become their own paragraphs."
+    - "Formula lines (including displayed equations) are separate paragraphs."
+    - "Assign stable block ids: p{page}-¶{para} (page is 1-based; para is 1-based within page)."
+  block_id_scheme: "p{page}-¶{para}"
+
+task_model:
+  tasks:
+    - id: "WAVE"
+      meaning: "State-vector / wavefunction / branch / amplitude / unitary evolution reasoning."
+    - id: "PROB"
+      meaning: "Probability / Born rule / distribution / typicality / frequency reasoning."
+    - id: "FACT"
+      meaning: "Single-run outcome / record / definite event / unique past-history claim."
+    - id: "BRIDGE"
+      meaning: "Explicit operational bridge licensing transfer (measurement/registration/postselection/classical data exchange)."
+  key_rule:
+    - "A SWITCH finding requires at least two different tasks in play (WAVE or PROB together with FACT) AND no explicit BRIDGE nearby."
+
+disciplines_model:
+  # 4 disciplines simultaneously (NOT levels)
+  disciplines:
+    - id: "MATH"
+      meaning: "Formal objects/operations: Hilbert space, operators, equations, derivations."
+    - id: "THEORY"
+      meaning: "Interpretational/ontological talk, claims about what the theory 'really says'."
+    - id: "EXPERIMENT"
+      meaning: "Measurement, apparatus, records, labs, experimental protocol."
+    - id: "ACTION"
+      meaning: "Actions of participants: choosing setting, announcing, conditioning, comparing logs, postselecting."
+
+tags:
+  # Task tags (internal)
+  - id: "W"
+    name: "wave_branch"
+    meaning: "WAVE task cues."
+  - id: "P"
+    name: "probabilistic"
+    meaning: "PROB task cues."
+  - id: "E1"
+    name: "event_fact_single_run"
+    meaning: "FACT (single-run) cues."
+  - id: "B"
+    name: "explicit_bridge"
+    meaning: "BRIDGE cues."
+  - id: "S"
+    name: "strong_inference"
+    meaning: "Necessity/uniqueness overreach markers."
+
+  # Discipline tags (internal)
+  - id: "DM"
+    name: "disc_math"
+    meaning: "MATH cues."
+  - id: "DT"
+    name: "disc_theory"
+    meaning: "THEORY cues."
+  - id: "DX"
+    name: "disc_experiment"
+    meaning: "EXPERIMENT cues."
+  - id: "DA"
+    name: "disc_action"
+    meaning: "ACTION cues."
+
+detection:
+  # IMPORTANT: triggers are only hints. A finding must satisfy structural conditions (task-mix + no bridge).
+  windows:
+    bridge_search_paragraphs: 1     # look in current paragraph + previous + next
+    quote_max_chars: 280
+
+  dictionaries:
+    # ---------- TASK CUES ----------
+    W_triggers:
+      - "wave function"
+      - "state vector"
+      - "superposition"
+      - "unitary"
+      - "unitary evolution"
+      - "Schrödinger"
+      - "interference"
+      - "amplitude"
+      - "coherence"
+      - "decoherence"
+      - "branch"
+      - "branches"
+      - "branching"
+      - "Hilbert space"
+      - "ket"
+      - "bra"
+      - "Ψ"
+      - "ψ"
+      - "⟨"
+      - "⟩"
+      - "|"
+      - "⊗"
+      - "U("
+      - "U†"
+      - "projector"
+      - "projection operator"
+      - "density matrix"
+      - "ρ"
+
+    P_triggers:
+      - "probability"
+      - "probabilities"
+      - "Born rule"
+      - "distribution"
+      - "conditional probability"
+      - "likelihood"
+      - "typical"
+      - "almost surely"
+      - "with probability"
+      - "expectation"
+      - "variance"
+      - "frequency"
+      - "relative frequency"
+      - "ensemble"
+      - "random variable"
+      - "stochastic"
+      - "measure (as in probability measure)"
+      - "typicality"
+
+    # FACT must be SINGLE-RUN / RECORD / UNIQUE CLAIM.
+    # Generic talk about "measurement" alone is NOT enough.
+    E_single_run_triggers:
+      - "the outcome is"
+      - "the result is"
+      - "we obtain"
+      - "we got"
+      - "is observed"
+      - "was observed"
+      - "is recorded"
+      - "was recorded"
+      - "registered"
+      - "the device shows"
+      - "the pointer indicates"
+      - "the lab contains a record"
+      - "Alice gets"
+      - "Bob gets"
+      - "must have been"
+      - "was tails"
+      - "was heads"
+      - "heads"
+      - "tails"
+      - "ok"
+      - "fail"
+      - "w = ok"
+      - "w̄ = ok"
+      - "bar{w}=ok"
+      - "w_bar = ok"
+      - "A ="
+      - "B ="
+      - "spin up"
+      - "spin down"
+      - "z ="
+      - "x ="
+
+    Bridge_triggers:
+      - "measurement is performed"
+      - "a measurement is performed"
+      - "is measured"
+      - "was measured"
+      - "is registered"
+      - "registration"
+      - "postselect"
+      - "post-selection"
+      - "conditioning on obtaining"
+      - "conditional on obtaining"
+      - "we condition on"
+      - "announce the result"
+      - "send the result"
+      - "receive the message"
+      - "exchange of classical information"
+      - "classical communication"
+      - "compare the records"
+      - "compare logs"
+      - "later compare"
+      - "after communication"
+      - "after exchanging"
+
+    Strong_inference_triggers:
+      - "must"
+      - "uniquely"
+      - "only possibility"
+      - "cannot be otherwise"
+      - "it follows that"
+      - "therefore"
+      - "hence"
+      - "implies"
+      - "forces"
+      - "rules out"
+      - "cannot"
+      - "no real part"
+      - "no role"
+      - "cannot consistently"
+      - "inconsistent"
+
+    # ---------- DISCIPLINE CUES ----------
+    DM_triggers:
+      - "Hilbert"
+      - "operator"
+      - "self-adjoint"
+      - "eigenvalue"
+      - "eigenvector"
+      - "projector"
+      - "unitary"
+      - "density matrix"
+      - "trace"
+      - "state"
+      - "equation"
+      - "derive"
+      - "proof"
+      - "lemma"
+      - "theorem"
+      - "Ψ"
+      - "ψ"
+      - "ρ"
+      - "⟨"
+      - "⟩"
+
+    DT_triggers:
+      - "interpretation"
+      - "ontology"
+      - "real"
+      - "really happens"
+      - "many-worlds"
+      - "Bohmian"
+      - "Copenhagen"
+      - "collapse postulate"
+      - "projection postulate"
+      - "eigenvector-eigenvalue link"
+      - "primitive ontology"
+      - "local beables"
+
+    DX_triggers:
+      - "experiment"
+      - "laboratory"
+      - "device"
+      - "apparatus"
+      - "measurement"
+      - "record"
+      - "pointer"
+      - "detector"
+      - "register"
+      - "outcome"
+      - "observed"
+
+    DA_triggers:
+      - "choose"
+      - "decide"
+      - "announce"
+      - "send"
+      - "receive"
+      - "compare"
+      - "condition on"
+      - "postselect"
+      - "look"
+      - "read the result"
+
+  tagging_rules:
+    # task tags
+    - id: "tag_W"
+      when_any_contains: "W_triggers"
+      add_tags: ["W"]
+    - id: "tag_P"
+      when_any_contains: "P_triggers"
+      add_tags: ["P"]
+    - id: "tag_E1"
+      when_any_contains: "E_single_run_triggers"
+      add_tags: ["E1"]
+    - id: "tag_B"
+      when_any_contains: "Bridge_triggers"
+      add_tags: ["B"]
+    - id: "tag_S"
+      when_any_contains: "Strong_inference_triggers"
+      add_tags: ["S"]
+
+    # discipline tags
+    - id: "tag_DM"
+      when_any_contains: "DM_triggers"
+      add_tags: ["DM"]
+    - id: "tag_DT"
+      when_any_contains: "DT_triggers"
+      add_tags: ["DT"]
+    - id: "tag_DX"
+      when_any_contains: "DX_triggers"
+      add_tags: ["DX"]
+    - id: "tag_DA"
+      when_any_contains: "DA_triggers"
+      add_tags: ["DA"]
+
+  safeguards:
+    - id: "do_not_flag_theory_only"
+      description: "Do not create switch findings for purely interpretational talk."
+      rule:
+        - "If a paragraph has DT but lacks E1 (single-run anchor), then it can be summarized as THEORY but must NOT be reported as a WAVE/PROB→FACT switch."
+
+findings:
+  philosophy:
+    - "Findings are about STRUCTURE: illegal transfer across tasks without an explicit bridge."
+    - "Not every critique is a 'switch'. Only task-mix + missing bridge counts."
+
+  rules:
+    - id: "F1_PROB_to_FACT_no_bridge"
+      description: "PROB→FACT single-run claim without explicit bridge nearby."
+      when:
+        paragraph_has_all_tags: ["P", "E1"]
+        no_bridge_in_window: true     # (current ± bridge_search_paragraphs) lacks B
+      scoring:
+        severity_base: 3
+        severity_if_has_S_add: 2
+        confidence_base: 0.65
+        confidence_if_has_S_add: 0.10
+        confidence_if_has_DX_or_DA_add: 0.10
+      output_titles:
+        classic: "Скрытый переход: вероятность → факт исхода (без явной регистрации)"
+        rm: "Скрытый переход: вероятность → наблюдаемый исход (нарушение строгой непрерывности)"
+
+    - id: "F2_WAVE_to_FACT_no_bridge"
+      description: "WAVE→FACT single-run/unique history claim without explicit bridge nearby."
+      when:
+        paragraph_has_all_tags: ["W", "E1"]
+        no_bridge_in_window: true
+      scoring:
+        severity_base: 3
+        severity_if_has_S_add: 2
+        confidence_base: 0.65
+        confidence_if_has_S_add: 0.10
+        confidence_if_has_DX_or_DA_add: 0.10
+      output_titles:
+        classic: "Скрытый переход: волновое/ветвистое описание → факт/история (без явного моста)"
+        rm: "Склейка несовместимых задач: ветви/амплитуды → единственный факт/прошлое"
+
+    - id: "F3_STRONG_overreach_near_switch"
+      description: "Strong necessity/uniqueness language inside a mixed-task paragraph."
+      when:
+        paragraph_has_tag: "S"
+        paragraph_has_any_tag: ["W", "P"]
+        paragraph_has_tag: "E1"
+      scoring:
+        severity_base: 2
+        confidence_base: 0.55
+      output_titles:
+        classic: "Маркер «слишком сильного вывода» рядом с переключением"
+        rm: "Маркер «слишком сильного вывода» (типичное усиление через склейку)"
+
+post_processing:
+  ranking:
+    primary: "severity"
+    secondary: "confidence"
+  grouping:
+    by_page: true
+    by_heading_if_available: true
+  thresholds:
+    min_confidence_to_report: 0.55
+    max_findings: 12
+
+report_template:
+  # IMPORTANT: No tables. Only copy-safe blocks.
+  structure_ru:
+    - "Кратко (TL;DR)"
+    - "Карта задач (WAVE/PROB/FACT) и мостов"
+    - "Карта дисциплин (MATH/THEORY/EXPERIMENT/ACTION)"
+    - "Найденные переключения/склейки (карточки)"
+    - "Самые сильные переусиления"
+    - "Минимальные исправления (мост или ослабление вывода)"
+  structure_en:
+    - "TL;DR"
+    - "Task map (WAVE/PROB/FACT) and bridges"
+    - "Discipline map (MATH/THEORY/EXPERIMENT/ACTION)"
+    - "Detected switch points (cards)"
+    - "Strongest overreaches"
+    - "Minimal fixes (bridge or weakening)"
+
+  card_format_ru:
+    - "Находка #{n}"
+    - "Где: {block_id} (стр. {page}, абзац {para}, раздел: {heading_if_any})"
+    - "Цитата: “{quote}”"
+    - "Задачи в абзаце: {tasks_readable}"
+    - "Дисциплины в абзаце: {disciplines_readable}"
+    - "Мост: {bridge_status} {bridge_quote_if_found}"
+    - "Что переносится: {illegal_transfer}"
+    - "Почему это переключение: {why_switch}"
+    - "Минимальная правка: {minimal_fix}"
+    - "Оценка: строгость={severity}/5, уверенность={confidence}/1.0"
+
+  card_format_en:
+    - "Finding #{n}"
+    - "Location: {block_id} (p.{page}, ¶{para}, section: {heading_if_any})"
+    - "Quote: “{quote}”"
+    - "Tasks: {tasks_readable}"
+    - "Disciplines: {disciplines_readable}"
+    - "Bridge: {bridge_status} {bridge_quote_if_found}"
+    - "Transferred claim: {illegal_transfer}"
+    - "Why this is a switch: {why_switch}"
+    - "Minimal fix: {minimal_fix}"
+    - "Score: strictness={severity}/5, confidence={confidence}/1.0"
+
+  readable_labels_ru:
+    tasks:
+      W: "WAVE (волновое/ветвистое)"
+      P: "PROB (вероятности)"
+      E1: "FACT (факт исхода/запись)"
+      B: "BRIDGE (явный мост)"
+    disciplines:
+      DM: "MATH"
+      DT: "THEORY"
+      DX: "EXPERIMENT"
+      DA: "ACTION"
+
+  fix_templates:
+    weaken_unique_to_compatible_ru: "Ослабить: «совместимо с X», вместо «уникально следует X»."
+    demand_bridge_ru: "Добавить явный мост: где именно измерено/зарегистрировано/сообщено (и кем)."
+    split_tasks_ru: "Разнести в разные задачи и явно отметить переключение (не переносить вывод как посылку)."
+
+notes_for_implementer:
+  - "Bridge detection must search within ±bridge_search_paragraphs paragraphs."
+  - "If bridge is found nearby, do NOT flag as 'no-bridge' switch; instead optionally note as 'explicit switch with bridge' (low severity)."
+  - "Do not output internal tag letters alone; always output readable labels."
+  - "Never output markdown tables."
