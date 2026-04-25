@@ -50,7 +50,7 @@ async def analyze_article(pdf_bytes: bytes, mode: str = "classical", lang: str =
             {"role": "user", "content": user_message}
         ],
         temperature=0.2,
-        max_tokens=4000
+        max_tokens=8000
     )
 
     return response.choices[0].message.content
