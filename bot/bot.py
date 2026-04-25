@@ -8,7 +8,9 @@ from telegram.ext import (
 )
 from config import TELEGRAM_TOKEN, MAX_PDF_SIZE_MB, MAX_FREE_ANALYSES, ADMIN_USER_IDS, DEFAULT_LANGUAGE, ANALYSES_PER_PACK, STARS_PER_PACK
 from policy_loader import POLICY_VERSION
-from analyzer import analyze_article
+from analyzer import (analyze_article, PDFEmptyError, PDFReadError,
+                       OpenAIRateLimitError, OpenAITimeoutError,
+                       OpenAIConnectionError, OpenAIError)
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -163,6 +165,31 @@ T = {
         "en": "❌ An error occurred during analysis. Please try again or contact the administrator.",
         "ru": "❌ Произошла ошибка при анализе. Попробуй ещё раз или обратись к администратору.",
         "uk": "❌ Сталася помилка під час аналізу. Спробуй ще раз або зверніться до адміністратора.",
+    },
+    "error_pdf_empty": {
+        "en": f"📄 Could not extract text from the PDF (maximum {MAX_PDF_SIZE_MB} MB).\nThe file may contain only scanned images. Please provide a PDF with selectable text.",
+        "ru": f"📄 Не удалось извлечь текст из PDF (максимум {MAX_PDF_SIZE_MB} МБ).\nВозможно файл содержит только сканированные изображения. Пришли PDF с выделяемым текстом.",
+        "uk": f"📄 Не вдалося витягти текст з PDF (максимум {MAX_PDF_SIZE_MB} МБ).\nМожливо файл містить лише скановані зображення. Надішли PDF з виділюваним текстом.",
+    },
+    "error_pdf_read": {
+        "en": "⚠️ Could not read the PDF file. It may be corrupted or password-protected. Please try a different file.",
+        "ru": "⚠️ Не удалось прочитать PDF файл. Возможно он повреждён или защищён паролем. Попробуй другой файл.",
+        "uk": "⚠️ Не вдалося прочитати PDF файл. Можливо він пошкоджений або захищений паролем. Спробуй інший файл.",
+    },
+    "error_rate_limit": {
+        "en": "🚫 OpenAI request limit exceeded. Please wait 1 minute and try again.",
+        "ru": "🚫 Превышен лимит запросов к OpenAI. Подожди 1 минуту и попробуй снова.",
+        "uk": "🚫 Перевищено ліміт запитів до OpenAI. Зачекай 1 хвилину і спробуй знову.",
+    },
+    "error_timeout": {
+        "en": "⏱ Analysis took too long and timed out. Please try again — shorter articles work better.",
+        "ru": "⏱ Анализ занял слишком много времени. Попробуй ещё раз — с короткими статьями работает лучше.",
+        "uk": "⏱ Аналіз зайняв занадто багато часу. Спробуй ще раз — з короткими статтями працює краще.",
+    },
+    "error_connection": {
+        "en": "🌐 Could not connect to OpenAI. Please check your connection and try again.",
+        "ru": "🌐 Не удалось подключиться к OpenAI. Проверь соединение и попробуй снова.",
+        "uk": "🌐 Не вдалося підключитися до OpenAI. Перевір з'єднання і спробуй знову.",
     },
     "new_analysis": {
         "en": "🔄 Ready for a new analysis. Send a PDF file.",
@@ -622,6 +649,26 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
         if remaining > 0 and user_id not in ADMIN_USER_IDS:
             await query.message.reply_text(t("remaining", lang, n=remaining))
 
+    except PDFEmptyError:
+        stats["total_errors"] += 1
+        stats_log(user_id, "ANALYSIS_ERROR", "PDF empty/scanned")
+        await query.message.reply_text(t("error_pdf_empty", lang))
+    except PDFReadError as e:
+        stats["total_errors"] += 1
+        stats_log(user_id, "ANALYSIS_ERROR", f"PDF read error: {str(e)[:60]}")
+        await query.message.reply_text(t("error_pdf_read", lang))
+    except OpenAIRateLimitError:
+        stats["total_errors"] += 1
+        stats_log(user_id, "ANALYSIS_ERROR", "OpenAI rate limit")
+        await query.message.reply_text(t("error_rate_limit", lang))
+    except OpenAITimeoutError:
+        stats["total_errors"] += 1
+        stats_log(user_id, "ANALYSIS_ERROR", "OpenAI timeout")
+        await query.message.reply_text(t("error_timeout", lang))
+    except OpenAIConnectionError:
+        stats["total_errors"] += 1
+        stats_log(user_id, "ANALYSIS_ERROR", "OpenAI connection error")
+        await query.message.reply_text(t("error_connection", lang))
     except Exception as e:
         logger.error(f"Ошибка анализа: {e}")
         stats["total_errors"] += 1
