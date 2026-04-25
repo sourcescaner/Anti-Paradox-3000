@@ -23,6 +23,31 @@ user_analysis_count: dict[int, int] = {}
 processed_message_ids: set[int] = set()
 processed_callback_ids: set[str] = set()
 
+# ─── СТАТИСТИКА (сбрасывается при перезапуске) ───────────────────────────────
+from datetime import datetime
+
+stats = {
+    "started_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+    "total_analyses": 0,
+    "total_questions": 0,
+    "total_errors": 0,
+    "total_purchases": 0,
+    "log": [],  # последние 50 событий: {time, user_id, event, detail}
+}
+
+def stats_log(user_id: int, event: str, detail: str = ""):
+    """Записывает событие в лог статистики."""
+    entry = {
+        "time": datetime.now().strftime("%m-%d %H:%M"),
+        "user_id": user_id,
+        "event": event,
+        "detail": detail,
+    }
+    stats["log"].append(entry)
+    if len(stats["log"]) > 50:
+        stats["log"].pop(0)
+    logger.info(f"[STATS] {event} | user={user_id} | {detail}")
+
 
 # ─── ПЕРЕВОДЫ ────────────────────────────────────────────────────────────────
 
@@ -376,6 +401,38 @@ async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(t("new_analysis", lang))
 
 
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает статистику — только для администратора."""
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_USER_IDS:
+        await update.message.reply_text("⛔ Команда доступна только администратору.")
+        return
+
+    # Собираем топ пользователей
+    top_users = sorted(user_analysis_count.items(), key=lambda x: x[1], reverse=True)[:5]
+    top_text = "\n".join(f"  {uid}: {cnt} анализов" for uid, cnt in top_users) or "  —"
+
+    # Последние 10 событий
+    recent = stats["log"][-10:]
+    log_text = "\n".join(
+        f"  [{e['time']}] {e['event']} | user={e['user_id']} | {e['detail']}"
+        for e in reversed(recent)
+    ) or "  —"
+
+    text = (
+        f"📊 Статистика AntiParadox-3000\n"
+        f"Политика: {POLICY_VERSION}\n"
+        f"Запущен: {stats['started_at']}\n\n"
+        f"Всего анализов: {stats['total_analyses']}\n"
+        f"Всего вопросов: {stats['total_questions']}\n"
+        f"Ошибок анализа: {stats['total_errors']}\n"
+        f"Покупок пакетов: {stats['total_purchases']}\n\n"
+        f"Топ пользователей:\n{top_text}\n\n"
+        f"Последние события:\n{log_text}"
+    )
+    await update.message.reply_text(text)
+
+
 async def lang_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Переключает язык по команде /en, /ru, /uk."""
     cmd = update.message.text.strip().lstrip("/").lower()
@@ -433,6 +490,8 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["pending_pdf_name"] = document.file_name
     context.user_data.pop("last_result", None)
     context.user_data["lang"] = lang  # фиксируем язык
+
+    stats_log(user_id, "PDF_RECEIVED", document.file_name)
 
     lang_flag = {"ru": "🇷🇺", "uk": "🇺🇦", "en": "🇬🇧"}.get(lang, "🇬🇧")
 
@@ -527,6 +586,10 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data["last_lang"] = lang
         context.user_data["question_count"] = 0
 
+        stats["total_analyses"] += 1
+        pdf_name = context.user_data.get("pending_pdf_name", "unknown")
+        stats_log(user_id, "ANALYSIS_DONE", f"mode={mode} lang={lang} file={pdf_name}")
+
         # Очищаем результат через 1 час (если job-queue установлен)
         if context.job_queue:
             context.job_queue.run_once(
@@ -561,6 +624,8 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
     except Exception as e:
         logger.error(f"Ошибка анализа: {e}")
+        stats["total_errors"] += 1
+        stats_log(user_id, "ANALYSIS_ERROR", str(e)[:80])
         await query.message.reply_text(t("error_analysis", lang))
     finally:
         context.user_data["analyzing"] = False
@@ -639,6 +704,8 @@ async def handle_text_question(update: Update, context: ContextTypes.DEFAULT_TYP
 
     question = update.message.text.strip()
     context.user_data["question_count"] = q_count + 1
+    stats["total_questions"] += 1
+    stats_log(update.effective_user.id, "QUESTION", f"q{q_count+1}: {question[:60]}")
     thinking_msg = await update.message.reply_text(t("thinking", lang))
 
     try:
@@ -689,6 +756,8 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Вычитаем ANALYSES_PER_PACK из счётчика (даём ещё анализов)
     user_analysis_count[user_id] = max(0, current - ANALYSES_PER_PACK)
     logger.info(f"Пользователь {user_id} купил пакет {ANALYSES_PER_PACK} анализов.")
+    stats["total_purchases"] += 1
+    stats_log(user_id, "PURCHASE", f"{ANALYSES_PER_PACK} analyses for {STARS_PER_PACK} Stars")
     await update.message.reply_text(t("payment_ok", lang))
 
 
@@ -701,6 +770,7 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about_command))
     app.add_handler(CommandHandler("new", new_command))
+    app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("en", lang_command))
     app.add_handler(CommandHandler("ru", lang_command))
     app.add_handler(CommandHandler("uk", lang_command))
