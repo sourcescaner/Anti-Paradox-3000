@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 processed_message_ids: set[int] = set()
 processed_callback_ids: set[str] = set()
 
+# Тест-мод (только для админов)
+test_mode_users: set[int] = set()
+
 # ─── СТАТИСТИКА (сбрасывается при перезапуске) ───────────────────────────────
 from datetime import datetime
 
@@ -462,6 +465,28 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 
+async def testmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Включает тест-мод: снимает админ-привилегии, лимит = 1 анализ."""
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_USER_IDS:
+        return
+    test_mode_users.add(user_id)
+    await update.message.reply_text(
+        "🧪 Тест-мод включён.\n"
+        "Ты теперь обычный пользователь с лимитом 1 анализ.\n"
+        "Для возврата напиши /adminmode"
+    )
+
+
+async def adminmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Выключает тест-мод и возвращает админ-привилегии."""
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_USER_IDS:
+        return
+    test_mode_users.discard(user_id)
+    await update.message.reply_text("✅ Админ-мод восстановлен. Лимиты сняты.")
+
+
 async def lang_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Переключает язык по команде /en, /ru, /uk."""
     cmd = update.message.text.strip().lstrip("/").lower()
@@ -507,7 +532,19 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t("too_large", lang))
         return
 
-    if await is_limit_reached(user_id):
+    # Проверка лимита (тест-мод: лимит 1 анализ, без админ-привилегий)
+    if user_id in test_mode_users:
+        user_data_db = await get_user(user_id)
+        if user_data_db["used"] >= 1:
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton(t("buy_button", lang), callback_data="buy_pack")
+            ]])
+            await update.message.reply_text(
+                f"🧪 [ТЕСТ-МОД] {t('limit_reached', lang)}",
+                reply_markup=keyboard
+            )
+            return
+    elif await is_limit_reached(user_id):
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton(t("buy_button", lang), callback_data="buy_pack")
         ]])
@@ -831,6 +868,8 @@ def main():
     app.add_handler(CommandHandler("about", about_command))
     app.add_handler(CommandHandler("new", new_command))
     app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("testmode", testmode_command))
+    app.add_handler(CommandHandler("adminmode", adminmode_command))
     app.add_handler(CommandHandler("en", lang_command))
     app.add_handler(CommandHandler("ru", lang_command))
     app.add_handler(CommandHandler("uk", lang_command))
