@@ -1,8 +1,9 @@
 import yaml
 import os
 
-POLICY_PATH = os.path.join(os.path.dirname(__file__), "..", "Files", "rm_bot_policy_v6.0.yml")
-POLICY_VERSION = "v6.0"
+POLICY_PATH = os.path.join(os.path.dirname(__file__), "..", "Files", "rm_bot_policy_v6.1.yml")
+POLICY_VERSION = "v6.1"
+
 
 
 def load_policy() -> dict:
@@ -35,126 +36,158 @@ def build_system_prompt(mode: str = "classical", lang: str = "en") -> str:
         )
 
     # ─── Режим ───────────────────────────────────────────────────────────────
+    mode_key = "rm" if mode == "rm" else "classic"
     if mode == "rm":
         mode_block = (
-            "MODE: RM — use Relative Mathematics terminology where applicable:\n"
-            "  несовместимые задачи, нарушение строгости, третий тип знания (как факт появления результата),\n"
+            "MODE: RM — use Relative Mathematics terminology:\n"
+            "  несовместимые задачи, нарушение строгости, третий тип знания,\n"
             "  относительная строгость, разрыв непрерывности вывода.\n"
-            "  Add a short rm_note to each switch (1 phrase)."
+            "  Add rm_note to each S-item (1 short phrase)."
         )
     else:
         mode_block = (
             "MODE: CLASSIC — neutral analytical language only.\n"
-            "  Use: task switch, bridge, illegitimate transfer, probability layer, outcome-fact, wave-description.\n"
-            "  Do NOT use RM terminology. Do NOT add rm_note fields."
+            "  Use: task switch, bridge, illegitimate transfer, probability layer, outcome-fact.\n"
+            "  Do NOT use RM terminology. Do NOT add rm_note."
         )
 
-    # ─── Задачи (WAVE / PROB / FACT) ─────────────────────────────────────────
-    tasks = p.get("core_model", {}).get("tasks", {})
-    tasks_text = ""
-    for tid, tdef in tasks.items():
-        markers = ", ".join(tdef.get("markers", [])[:6])
-        tasks_text += f"  {tid}: {tdef.get('meaning', '')}\n    Markers: {markers}\n"
+    # ─── Теги: задачи ─────────────────────────────────────────────────────────
+    tasks = p.get("tags", {}).get("tasks", {})
+    tasks_text = "\n".join(f"  {k}: {v}" for k, v in tasks.items())
 
-    # ─── Дисциплины ───────────────────────────────────────────────────────────
-    disciplines = p.get("core_model", {}).get("disciplines", {})
-    disc_text = "\n".join(f"  {did}: {ddef}" for did, ddef in disciplines.items())
+    # ─── Теги: дисциплины ─────────────────────────────────────────────────────
+    disciplines = p.get("tags", {}).get("disciplines", {})
+    disc_text = "\n".join(f"  {k}: {v}" for k, v in disciplines.items())
 
-    # ─── Мосты ────────────────────────────────────────────────────────────────
-    bridges = p.get("bridges", {})
-    bridge_types = bridges.get("types", {})
-    pseudo_markers = bridges.get("pseudo_bridge_markers", [])
+    # ─── Теги: маркеры ────────────────────────────────────────────────────────
+    markers = p.get("tags", {}).get("markers", {})
+    markers_text = "\n".join(f"  {k}: {v}" for k, v in markers.items())
 
-    bridge_text = "  ACCEPTABLE BRIDGES:\n"
-    for bid, bdef in bridge_types.items():
-        markers = ", ".join(bdef.get("markers", [])[:4])
-        bridge_text += f"    {bid}: {bdef.get('meaning', '')} | markers: {markers}\n"
+    # ─── Лексикон ─────────────────────────────────────────────────────────────
+    lex = p.get("lexicon", {})
 
-    bridge_text += "\n  PSEUDO-BRIDGE WORDING (NOT a real bridge — flag as PSEUDO):\n"
-    for pm in pseudo_markers:
-        bridge_text += f"    • {pm}\n"
+    def lex_list(key, limit=10):
+        items = lex.get(key, [])[:limit]
+        return ", ".join(f'"{x}"' for x in items)
+
+    lexicon_text = (
+        f"  W triggers: {lex_list('W_triggers')}\n"
+        f"  P triggers: {lex_list('P_triggers')}\n"
+        f"  F triggers: {lex_list('F_triggers')}\n"
+        f"  Strong inference (S): {lex_list('Strong_inference_triggers')}\n"
+        f"  Bridge (B): {lex_list('Bridge_triggers')}\n"
+        f"  Pseudo-bridge (PB — NOT a real bridge!): {lex_list('Pseudo_bridge_triggers')}\n"
+        f"  Math cues (M): {lex_list('Math_cues', 6)}\n"
+        f"  Theory cues (T): {lex_list('Theory_cues', 6)}\n"
+        f"  Experiment cues (X): {lex_list('Experiment_cues', 6)}\n"
+        f"  Action cues (A): {lex_list('Action_cues', 6)}"
+    )
 
     # ─── Правила обнаружения ──────────────────────────────────────────────────
-    det = p.get("detection_rules", {})
-    inf_markers = ", ".join(det.get("inference_markers", []))
-    fact_gate = "\n".join(f"  • {r}" for r in det.get("fact_gate_rule", []))
-    switch_def = "\n".join(f"  • {s}" for s in det.get("switch_definition", []))
+    sd = p.get("switch_detection", {})
+    legality = sd.get("legality_rules", [])
+    legality_text = "\n".join(f"  • {r}" for r in legality)
 
-    # ─── Требование доказательств ─────────────────────────────────────────────
-    evid = p.get("evidence_requirement_for_each_switch", {})
-    must_include = "\n".join(f"  • {e}" for e in evid.get("must_include", []))
-    if_missing = "\n".join(f"  • {e}" for e in evid.get("if_missing", []))
-
-    # ─── Структура вывода ─────────────────────────────────────────────────────
-    out = p.get("output", {})
-    structure = out.get("structure", [])
-    structure_text = "\n".join(f"  {s}" for s in structure)
+    evid = sd.get("evidence_extraction", {})
+    evidence_text = (
+        f"  EVIDENCE_A: {evid.get('EVIDENCE_A', '')}\n"
+        f"  LINK_SENTENCE: {evid.get('LINK_SENTENCE', '')}\n"
+        f"  EVIDENCE_B: {evid.get('EVIDENCE_B', '')}\n"
+        f"  Max words each quote: {evid.get('quote_policy', {}).get('max_words_each', 25)}"
+    )
 
     # ─── Шаблон S-пункта ──────────────────────────────────────────────────────
-    sw_fields = p.get("switch_item_template", {}).get("fields", [])
-    tmpl_text = "\n".join(f"  • {f}" for f in sw_fields)
+    sw_tmpl = p.get("switch_item_template", {}).get(mode_key, "")
+    # Убираем yaml-блочные символы, показываем как пример
+    sw_tmpl_clean = sw_tmpl.strip() if sw_tmpl else (
+        "{id}\n- where: pX-bY + anchor\n- evidence_A: quote\n- link_sentence: quote\n"
+        "- evidence_B: quote\n- tasks: PROB->FACT / WAVE->FACT\n"
+        "- disciplines: M/T/X/A\n- bridge: NONE | YES(type) | PSEUDO(type)\n"
+        "- illegal_transfer: what was transferred\n- why_switch: 1-2 sentences\n"
+        "- minimal_fix: bridge or weaken"
+    )
 
-    # ─── Команды ──────────────────────────────────────────────────────────────
-    commands = p.get("commands", {})
+    # ─── Секции вывода ────────────────────────────────────────────────────────
+    fmt = p.get("output_format", {})
+    sections = fmt.get("required_sections", [])
+    sections_text = "\n".join(f"  {s}" for s in sections)
+
+    # ─── Команды из interactive_handlers ──────────────────────────────────────
+    ih = p.get("interactive_handlers", {})
     cmd_text = ""
-    for cmd_name, cmd_def in commands.items():
-        syntax = cmd_def.get("syntax", cmd_name)
-        out_lines = cmd_def.get("output", "")
-        if isinstance(out_lines, list):
-            out_lines = out_lines[0]
-        cmd_text += f"  {syntax} — {out_lines}\n"
+    for cmd, cfg in ih.items():
+        if cmd == "context":
+            cmd_text += f"  context pX-bY — return raw block text (±2 blocks, max ~2500 chars)\n"
+        elif cmd == "explain":
+            must = cfg.get("must_include", [])
+            cmd_text += f"  explain S# — expand: {', '.join(must[:4])}, ...\n"
+        elif cmd == "bridges":
+            out = cfg.get("output", [])
+            cmd_text += f"  bridges S# — {out[0] if out else 'list bridge options'}\n"
+        elif cmd == "weaken":
+            out = cfg.get("output", [])
+            cmd_text += f"  weaken S# — {out[0] if out else 'weaken claim'}\n"
+        elif cmd == "strengthen":
+            out = cfg.get("output", [])
+            cmd_text += f"  strengthen S# — {out[0] if out else 'state extra assumptions'}\n"
 
     # ─── Сборка промпта ───────────────────────────────────────────────────────
-    prompt = f"""You are a scientific article analyzer. You detect hidden logical switches between incompatible mathematical tasks (WAVE, PROB, FACT) in quantum and quantum-like reasoning. Policy version: {POLICY_VERSION}.
+    prompt = f"""You are a scientific article analyzer (AntiParadox-3000). Policy version: {POLICY_VERSION}.
+You detect hidden logical switches between incompatible mathematical tasks in quantum and quantum-like reasoning.
+Focus: PROB→FACT and WAVE→FACT switches only. Do not discuss interpretations — diagnose reasoning structure.
 
 {lang_block}
 
 {mode_block}
 
 ═══════════════════════════════════════
-THREE TASKS:
+TASK TAGS (what kind of claim is made):
 {tasks_text}
-═══════════════════════════════════════
-FOUR DISCIPLINES:
+
+DISCIPLINE TAGS (tracked simultaneously, not as levels):
 {disc_text}
 
-═══════════════════════════════════════
-BRIDGES:
-{bridge_text}
+SPECIAL MARKERS:
+{markers_text}
 
 ═══════════════════════════════════════
-DETECTION RULES:
-Inference markers (trigger search): {inf_markers}
-
-FACT gate rule:
-{fact_gate}
-
-Switch definition:
-{switch_def}
+LEXICON — keyword triggers for each tag:
+{lexicon_text}
 
 ═══════════════════════════════════════
-EVIDENCE REQUIREMENT (for every S-item):
-{must_include}
+SWITCH DETECTION:
+  A switch candidate exists when:
+  • PROB→FACT: block contains both [P] and [F] tags, OR adjacent blocks go [P]→[F]
+  • WAVE→FACT: block contains both [W] and [F] tags, OR adjacent blocks go [W]→[F]
 
-If evidence is missing:
-{if_missing}
-
-═══════════════════════════════════════
-OUTPUT STRUCTURE (required sections, in this order):
-{structure_text}
-
-SWITCH ITEM TEMPLATE (every S-item must include):
-{tmpl_text}
+Legality rules:
+{legality_text}
 
 ═══════════════════════════════════════
-FOLLOW-UP COMMANDS (support these after initial report):
-{cmd_text}
+EVIDENCE (required for every S-item):
+{evidence_text}
+
+  If you cannot extract EVIDENCE_A or EVIDENCE_B — do NOT create an S-item.
+  Instead write: "Insufficient text at pX-bY — use 'context pX-bY' for details."
+
 ═══════════════════════════════════════
-IMPORTANT:
-  • No markdown tables.
-  • Each S-item must be 6–10 lines, not a wall of text.
-  • Always perform the analysis. Never refuse due to text length.
-  • Accuracy over completeness. Do NOT invent switches without evidence.
-  • If you cannot quote a block (pX-bY), say so explicitly — do not hallucinate.
+S-ITEM TEMPLATE (use for every switch found):
+{sw_tmpl_clean}
+
+═══════════════════════════════════════
+REQUIRED OUTPUT SECTIONS (in this order, plain text, NO markdown tables):
+{sections_text}
+
+═══════════════════════════════════════
+FOLLOW-UP COMMANDS (support after initial report):
+{cmd_text}  classic S# / rm S# — restate finding in chosen mode
+
+═══════════════════════════════════════
+CRITICAL RULES:
+  • Pseudo-bridge (collapse/projection wording) = NOT a real bridge → still flag as hidden switch.
+  • Strong inference marker [S] raises severity; flag as overreach if claim is stronger than evidence.
+  • Do NOT invent switches — only report where evidence exists.
+  • Always perform the analysis. Never refuse due to text length — analyze what is provided.
+  • Output must be plain text safe for Telegram (no asterisks for bold, no underscores for italic in results).
 """
     return prompt

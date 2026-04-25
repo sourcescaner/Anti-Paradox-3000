@@ -1,0 +1,413 @@
+# rm_bot_policy_v6.1.yml
+# AntiParadox-3000 — RM switch tracker
+# Patch goal: вернуть смысл v5.0, но сохранить читабельность и команды.
+
+version: "6.1"
+bot_name: "AntiParadox-3000"
+default_mode: "classic"          # classic | rm
+default_output_language: "user"  # user selects: ru | uk | en | ...
+quotes_language: "original"      # quotes remain in source language
+
+scope:
+  inputs:
+    allowed_file_types: ["pdf"]
+  switches_in_scope:
+    - "PROB_to_FACT"
+    - "WAVE_to_FACT"
+  note:
+    - "We do not discuss 'interpretations' as a solution. We diagnose switches in reasoning."
+    - "Four disciplines are tracked simultaneously (not as levels): MATH, THEORY, EXPERIMENT, ACTION."
+
+# -----------------------------------------------------------------------------
+# 1) PDF segmentation: pages -> paragraph blocks
+# -----------------------------------------------------------------------------
+segmentation:
+  unit: "paragraph_block"
+  block_size_guidelines:
+    max_paragraphs_per_block: 3
+    max_chars_per_block: 1400
+    keep_formula_lines_with_previous_paragraph: true
+  block_id_format: "p{page}-b{n}"         # page is 1-based for user
+  stored_fields_per_block:
+    - "page"
+    - "block_id"
+    - "raw_text"
+    - "anchor"                            # first 10–15 words
+    - "tags"                              # task + discipline + inference markers
+
+# -----------------------------------------------------------------------------
+# 2) Tags: tasks + disciplines (4 disciplines simultaneously)
+# -----------------------------------------------------------------------------
+tags:
+  tasks:
+    W: "WAVE/BRANCH (unitary evolution, superposition, branches, amplitudes)"
+    P: "PROBABILITY (Born rule, distributions, conditional probabilities)"
+    F: "FACT/OUTCOME/HISTORY (observed/recorded result, unique history statements)"
+  disciplines:
+    M: "MATHEMATICS (operators, Hilbert space, equations, derivations)"
+    T: "THEORY (semantic claims: explains/means/is part of theory/orthodoxy/etc.)"
+    X: "EXPERIMENT/REGISTRATION (measurement, device, record, data comparison)"
+    A: "ACTIONS (assume/suppose/condition/declare/select/switch model)"
+
+  markers:
+    S: "STRONG INFERENCE (must/uniquely/only/therefore/hence/implies)"
+    B: "BRIDGE (explicit operational step: measurement/record/postselection/communication)"
+    PB: "PSEUDO-BRIDGE (words like collapse/projection used as if they were an operational bridge)"
+
+lexicon:
+  # Task triggers
+  W_triggers:
+    - "unitary"
+    - "Schrödinger"
+    - "wave function"
+    - "state |"
+    - "superposition"
+    - "branch"
+    - "amplitude"
+    - "interference"
+    - "Ψ"
+    - "ψ"
+  P_triggers:
+    - "Born"
+    - "probability"
+    - "Pr("
+    - "distribution"
+    - "conditional probability"
+    - "typical"
+    - "almost surely"
+    - "stochastic"
+  F_triggers:
+    - "outcome"
+    - "result"
+    - "record"
+    - "observed"
+    - "registered"
+    - "the coin was"
+    - "must have been"
+    - "device shows"
+    - "pointer indicates"
+    - "Alice gets"
+    - "Bob gets"
+    - "ok"
+    - "fail"
+    - "heads"
+    - "tails"
+
+  # Strong inference markers
+  Strong_inference_triggers:
+    - "must"
+    - "uniquely"
+    - "only possibility"
+    - "cannot be otherwise"
+    - "it follows that"
+    - "therefore"
+    - "hence"
+    - "implies"
+    - "forces"
+    - "rules out"
+    - "contradiction is derived"
+    - "either ... or"    # heuristic: often used to jump to factual disjunction
+
+  # REAL bridges (operational)
+  Bridge_triggers:
+    - "measurement is performed"
+    - "is measured"
+    - "was measured"
+    - "is observed"
+    - "was observed"
+    - "is registered"
+    - "recorded"
+    - "registration"
+    - "postselect"
+    - "post-selection"
+    - "conditioning on obtaining"
+    - "conditional on obtaining"
+    - "we condition on"
+    - "compare the records"
+    - "exchange of classical information"
+    - "send the result"
+    - "receive the message"
+    - "announce the result"
+
+  # PSEUDO bridges (must NOT count as bridgepresent=YES)
+  Pseudo_bridge_triggers:
+    - "collapse"
+    - "projection postulate"
+    - "collapse law"
+    - "reduction postulate"
+    - "eigenvector-eigenvalue link"
+    - "E-E link"
+    - "wavefunction collapses"
+
+  # Discipline cues
+  Math_cues:
+    - "operator"
+    - "eigenvalue"
+    - "eigenvector"
+    - "Hilbert"
+    - "density matrix"
+    - "trace"
+    - "projector"
+    - "POVM"
+    - "theorem"
+    - "lemma"
+    - "proof"
+  Theory_cues:
+    - "interpretation"
+    - "ontology"
+    - "really"
+    - "in reality"
+    - "orthodox"
+    - "is part of the theory"
+    - "plays no role"
+    - "cannot consistently"
+  Experiment_cues:
+    - "apparatus"
+    - "detector"
+    - "measurement"
+    - "record"
+    - "pointer"
+    - "data"
+    - "lab"
+  Action_cues:
+    - "assume"
+    - "suppose"
+    - "condition"
+    - "choose"
+    - "select"
+    - "treat as"
+    - "identify as"
+    - "rewrite"
+
+tagging_rules:
+  - id: "task_W"
+    when_any_contains: "W_triggers"
+    add_tags: ["W"]
+  - id: "task_P"
+    when_any_contains: "P_triggers"
+    add_tags: ["P"]
+  - id: "task_F"
+    when_any_contains: "F_triggers"
+    add_tags: ["F"]
+
+  - id: "marker_S"
+    when_any_contains: "Strong_inference_triggers"
+    add_tags: ["S"]
+  - id: "marker_B"
+    when_any_contains: "Bridge_triggers"
+    add_tags: ["B"]
+  - id: "marker_PB"
+    when_any_contains: "Pseudo_bridge_triggers"
+    add_tags: ["PB"]
+
+  - id: "disc_M"
+    when_any_contains: "Math_cues"
+    add_tags: ["M"]
+  - id: "disc_T"
+    when_any_contains: "Theory_cues"
+    add_tags: ["T"]
+  - id: "disc_X"
+    when_any_contains: "Experiment_cues"
+    add_tags: ["X"]
+  - id: "disc_A"
+    when_any_contains: "Action_cues"
+    add_tags: ["A"]
+
+# -----------------------------------------------------------------------------
+# 3) Switch detection: generate candidates + classify + decide legality
+# -----------------------------------------------------------------------------
+switch_detection:
+  unit: "block_and_boundary"
+  candidate_generation:
+    within_block_if_tags_mixed: true
+    between_adjacent_blocks_if_tags_change: true
+
+  switch_types:
+    PROB_to_FACT:
+      detect_if:
+        any_of:
+          - block_has_all_tags: ["P", "F"]
+          - adjacent_pair:
+              left_has_any: ["P"]
+              right_has_any: ["F"]
+      bridge_ok_if_block_or_boundary_has_tag: "B"
+      pseudo_bridge_if_has_tag: "PB"
+      severity:
+        base: 3
+        add_if_strong_inference_tag_S: 2
+
+    WAVE_to_FACT:
+      detect_if:
+        any_of:
+          - block_has_all_tags: ["W", "F"]
+          - adjacent_pair:
+              left_has_any: ["W"]
+              right_has_any: ["F"]
+      bridge_ok_if_block_or_boundary_has_tag: "B"
+      pseudo_bridge_if_has_tag: "PB"
+      severity:
+        base: 3
+        add_if_strong_inference_tag_S: 2
+
+  evidence_extraction:
+    # for each S-item: pick three short snippets
+    EVIDENCE_A: "1 short snippet from source-side reasoning (<=25 words)"
+    LINK_SENTENCE: "the 'therefore/hence/implies' sentence (<=25 words) if available"
+    EVIDENCE_B: "1 short snippet from target-side fact-claim (<=25 words)"
+    quote_policy:
+      max_words_each: 25
+      keep_original_language: true
+
+  legality_rules:
+    - "If switch detected and tag B is absent -> hidden switch."
+    - "If only PB is present (collapse/projection wording) but no B -> treat as hidden switch with bridge=PSEUDO(...)."
+
+# -----------------------------------------------------------------------------
+# 4) Output format (NO tables, Telegram-safe)
+# -----------------------------------------------------------------------------
+output_format:
+  telegram_safe_plain_text: true
+  no_markdown_tables: true
+  required_sections:
+    - "0) TLDR"
+    - "1) Легенда задач"
+    - "2) Карта рассуждения"
+    - "3) Найденные переключения"
+    - "4) Top-3 переусиления"
+    - "5) Минимальные правки"
+    - "6) Команды для уточнений"
+
+  section_templates:
+    TLDR:
+      classic: |
+        0) TLDR
+        {tldr}
+      rm: |
+        0) TLDR (RM)
+        {tldr}
+
+    LEGEND:
+      classic: |
+        1) Легенда задач
+        - WAVE: волновое/ветвистое описание (состояния, унитарность, суперпозиции)
+        - PROB: вероятностный слой (правило Борна, распределения, условные вероятности)
+        - FACT: факты/исходы/записи (получено ok, было tails, прибор показал и т.п.)
+      rm: |
+        1) Легенда задач (RM)
+        - WAVE: ветвистое описание
+        - PROB: вероятностное описание
+        - FACT: фактовое описание (результат как новое знание)
+
+    MAP:
+      classic: |
+        2) Карта рассуждения (коротко по разделам)
+        {map_items}
+      rm: |
+        2) Карта рассуждения (RM)
+        {map_items}
+
+    SWITCHES:
+      classic: |
+        3) Найденные переключения (S1, S2, ...)
+        {switch_items}
+      rm: |
+        3) Найденные переключения (RM)
+        {switch_items}
+
+    OVERREACH:
+      classic: |
+        4) Top-3 переусиления
+        {overreach_items}
+      rm: |
+        4) Top-3 переусиления (RM)
+        {overreach_items}
+
+    FIXES:
+      classic: |
+        5) Минимальные правки (мост или ослабление)
+        {fix_items}
+      rm: |
+        5) Минимальные правки (RM)
+        {fix_items}
+
+    COMMANDS:
+      classic: |
+        6) Команды для уточнений
+        - context pX-bY
+        - explain S1
+        - bridges S1
+        - weaken S1
+        - strengthen S1
+        - classic S1
+        - rm S1
+      rm: |
+        6) Команды (RM)
+        - context pX-bY
+        - explain S1
+        - bridges S1
+        - weaken S1
+        - strengthen S1
+        - classic S1
+        - rm S1
+
+switch_item_template:
+  classic: |
+    {id}
+    - where: {location}
+    - evidence_A: "{evidence_a}"
+    - link_sentence: "{link_sentence}"
+    - evidence_B: "{evidence_b}"
+    - tasks: {tasks}
+    - disciplines: {disciplines}
+    - bridge: {bridge}   # YES(type) | NONE | PSEUDO(type)
+    - illegal_transfer: {illegal_transfer}
+    - why_switch: {why_switch}
+    - minimal_fix: {minimal_fix}
+  rm: |
+    {id}
+    - where: {location}
+    - evidence_A: "{evidence_a}"
+    - link_sentence: "{link_sentence}"
+    - evidence_B: "{evidence_b}"
+    - tasks: {tasks}
+    - disciplines: {disciplines}
+    - bridge: {bridge}
+    - illegal_transfer: {illegal_transfer}
+    - why_switch: {why_switch}
+    - minimal_fix: {minimal_fix}
+    - rm_note: {rm_note}
+
+# -----------------------------------------------------------------------------
+# 5) Interactive handlers (context/explain/bridges/weaken/strengthen)
+# -----------------------------------------------------------------------------
+interactive_handlers:
+  context:
+    window_blocks_before: 2
+    window_blocks_after: 2
+    return_raw_text: true
+    max_total_chars: 2500
+    if_text_missing: "Текст блока не сохранён. Нужно включить сохранение raw_text при первичном анализе."
+
+  explain:
+    must_include:
+      - "where"
+      - "evidence_A"
+      - "link_sentence"
+      - "evidence_B"
+      - "what_is_transferred"
+      - "why_no_bridge"
+      - "minimal_bridge_options"
+      - "minimal_weaken_option"
+
+  bridges:
+    output:
+      - "list 2-4 possible bridges (MEASUREMENT_RECORD, CONDITIONAL_UPDATE, MODEL_REWRITE, POSTSELECTION, CLASSICAL_COMMUNICATION)"
+      - "choose minimal bridge and explain why it is minimal"
+
+  weaken:
+    output:
+      - "rewrite conclusion from 'must/uniquely' to 'compatible with / suggests / conditional on ...'"
+
+  strengthen:
+    output:
+      - "state explicitly which extra assumption(s) or bridge(s) are needed to justify a strong factual claim"
