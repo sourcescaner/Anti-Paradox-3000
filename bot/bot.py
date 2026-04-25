@@ -11,15 +11,13 @@ from policy_loader import POLICY_VERSION
 from analyzer import (analyze_article, PDFEmptyError, PDFReadError,
                        OpenAIRateLimitError, OpenAITimeoutError,
                        OpenAIConnectionError, OpenAIError)
+from database import init_db, get_user, increment_used, add_paid, is_limit_reached, get_remaining, get_all_users
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-# Простое хранилище счётчиков (в памяти; для продакшна нужна БД)
-user_analysis_count: dict[int, int] = {}
 
 # Защита от дублей
 processed_message_ids: set[int] = set()
@@ -435,9 +433,13 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ Команда доступна только администратору.")
         return
 
-    # Собираем топ пользователей
-    top_users = sorted(user_analysis_count.items(), key=lambda x: x[1], reverse=True)[:5]
-    top_text = "\n".join(f"  {uid}: {cnt} анализов" for uid, cnt in top_users) or "  —"
+    # Собираем топ пользователей из БД
+    all_users = await get_all_users()
+    top_users = all_users[:5]
+    top_text = "\n".join(
+        f"  {u['user_id']}: {u['used']} исп. / {u['paid']} оплачено"
+        for u in top_users
+    ) or "  —"
 
     # Последние 10 событий
     recent = stats["log"][-10:]
@@ -505,8 +507,7 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t("too_large", lang))
         return
 
-    count = user_analysis_count.get(user_id, 0)
-    if count >= MAX_FREE_ANALYSES and user_id not in ADMIN_USER_IDS:
+    if await is_limit_reached(user_id):
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton(t("buy_button", lang), callback_data="buy_pack")
         ]])
@@ -605,8 +606,8 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
         result = await analyze_article(bytes(pdf_bytes), mode=mode, lang=lang)
 
-        user_analysis_count[user_id] = user_analysis_count.get(user_id, 0) + 1
-        remaining = MAX_FREE_ANALYSES - user_analysis_count[user_id]
+        await increment_used(user_id)
+        remaining = await get_remaining(user_id)
 
         context.user_data["last_result"] = result
         context.user_data["last_mode"] = mode
@@ -648,6 +649,11 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
         if remaining > 0 and user_id not in ADMIN_USER_IDS:
             await query.message.reply_text(t("remaining", lang, n=remaining))
+        elif remaining == 0 and user_id not in ADMIN_USER_IDS:
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton(t("buy_button", lang), callback_data="buy_pack")
+            ]])
+            await query.message.reply_text(t("limit_reached", lang), reply_markup=keyboard)
 
     except PDFEmptyError:
         stats["total_errors"] += 1
@@ -802,6 +808,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     current = user_analysis_count.get(user_id, 0)
     # Вычитаем ANALYSES_PER_PACK из счётчика (даём ещё анализов)
     user_analysis_count[user_id] = max(0, current - ANALYSES_PER_PACK)
+    await add_paid(user_id, ANALYSES_PER_PACK)
     logger.info(f"Пользователь {user_id} купил пакет {ANALYSES_PER_PACK} анализов.")
     stats["total_purchases"] += 1
     stats_log(user_id, "PURCHASE", f"{ANALYSES_PER_PACK} analyses for {STARS_PER_PACK} Stars")
@@ -828,6 +835,10 @@ def main():
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_question))
+
+    logger.info("Инициализация базы данных...")
+    import asyncio as _asyncio
+    _asyncio.get_event_loop().run_until_complete(init_db())
 
     logger.info("Бот запущен...")
     app.run_polling(drop_pending_updates=True)

@@ -3,3 +3,4 @@ openai>=2.0.0
 pdfplumber==0.11.4
 pyyaml==6.0.2
 python-dotenv==1.0.1
+asyncpg==0.29.0
