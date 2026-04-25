@@ -179,6 +179,11 @@ T = {
         "ru": "❌ Не удалось ответить на вопрос. Попробуй ещё раз.",
         "uk": "❌ Не вдалося відповісти на запитання. Спробуй ще раз.",
     },
+    "questions_limit": {
+        "en": "❗ You've used all 10 questions for this analysis session.\n\nSend a new PDF to start a fresh session.",
+        "ru": "❗ Использованы все 10 вопросов по этому анализу.\n\nОтправь новый PDF чтобы начать новую сессию.",
+        "uk": "❗ Використано всі 10 запитань по цьому аналізу.\n\nНадішли новий PDF щоб почати нову сесію.",
+    },
     "payment_title": {
         "en": f"{ANALYSES_PER_PACK} analyses — Anti-Paradox-3000",
         "ru": f"{ANALYSES_PER_PACK} анализов — Anti-Paradox-3000",
@@ -519,6 +524,7 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data["last_result"] = result
         context.user_data["last_mode"] = mode
         context.user_data["last_lang"] = lang
+        context.user_data["question_count"] = 0
 
         # Очищаем результат через 1 час (если job-queue установлен)
         if context.job_queue:
@@ -625,7 +631,13 @@ async def handle_text_question(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(t("no_pdf_hint", lang))
         return
 
+    q_count = context.user_data.get("question_count", 0)
+    if q_count >= 10:
+        await update.message.reply_text(t("questions_limit", lang))
+        return
+
     question = update.message.text.strip()
+    context.user_data["question_count"] = q_count + 1
     thinking_msg = await update.message.reply_text(t("thinking", lang))
 
     try:
