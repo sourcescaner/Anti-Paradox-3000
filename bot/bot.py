@@ -222,6 +222,45 @@ def detect_lang(tg_lang_code: str | None) -> str:
     return "en"
 
 
+async def send_long_text(target, text: str, parse_mode: str = None):
+    """Отправляет длинный текст, разбивая по абзацам (не посреди строки).
+    Тексты от OpenAI всегда отправляются без parse_mode во избежание 400-ошибок."""
+    if len(text) <= 4000:
+        await target.reply_text(text, parse_mode=parse_mode)
+        return
+
+    # Нарезаем по абзацам, не посреди строки
+    paragraphs = text.split("\n\n")
+    chunks = []
+    current = ""
+    for para in paragraphs:
+        addition = ("\n\n" if current else "") + para
+        if len(current) + len(addition) <= 3800:
+            current += addition
+        else:
+            if current:
+                chunks.append(current)
+            # Если один абзац длиннее 3800 — режем по строкам
+            if len(para) > 3800:
+                lines = para.split("\n")
+                sub = ""
+                for line in lines:
+                    if len(sub) + len(line) + 1 <= 3800:
+                        sub += ("\n" if sub else "") + line
+                    else:
+                        if sub:
+                            chunks.append(sub)
+                        sub = line
+                current = sub
+            else:
+                current = para
+    if current:
+        chunks.append(current)
+
+    for chunk in chunks:
+        await target.reply_text(chunk, parse_mode=parse_mode)
+
+
 # ─── СТАТИЧНЫЕ ТЕКСТЫ /help и /about ────────────────────────────────────────
 
 HELP_TEXT = {
@@ -492,15 +531,9 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
         lang_flag = {"ru": "🇷🇺", "uk": "🇺🇦", "en": "🇬🇧"}.get(lang, "🇬🇧")
         header = t("result_header", lang, mode=mode_lbl, version=POLICY_VERSION, flag=lang_flag)
-        full_text = header + result
-
-        if len(full_text) <= 4096:
-            await query.message.reply_text(full_text, parse_mode="Markdown")
-        else:
-            chunks = [full_text[i:i+4000] for i in range(0, len(full_text), 4000)]
-            for i, chunk in enumerate(chunks):
-                prefix = t("part", lang, i=i+1, n=len(chunks)) if len(chunks) > 1 else ""
-                await query.message.reply_text(prefix + chunk, parse_mode="Markdown")
+        # Заголовок — наш текст, с Markdown. Результат от OpenAI — plain text (без parse_mode)
+        await query.message.reply_text(header.strip(), parse_mode="Markdown")
+        await send_long_text(query.message, result)
 
         # Кнопки корректировки
         btns = T["adjust_buttons"].get(lang, T["adjust_buttons"]["en"])
@@ -569,14 +602,8 @@ async def handle_adjust(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from analyzer import adjust_analysis
         result = await adjust_analysis(last_result, instruction, lang)
 
-        full_text = f"*{label}*\n\n{result}"
-        if len(full_text) <= 4096:
-            await query.message.reply_text(full_text, parse_mode="Markdown")
-        else:
-            chunks = [full_text[i:i+4000] for i in range(0, len(full_text), 4000)]
-            for i, chunk in enumerate(chunks):
-                prefix = t("part", lang, i=i+1, n=len(chunks)) if len(chunks) > 1 else ""
-                await query.message.reply_text(prefix + chunk, parse_mode="Markdown")
+        await query.message.reply_text(f"*{label}*", parse_mode="Markdown")
+        await send_long_text(query.message, result)
     except Exception as e:
         logger.error(f"Ошибка корректировки: {e}")
         await query.message.reply_text(t("error_adjust", lang))
@@ -607,14 +634,8 @@ async def handle_text_question(update: Update, context: ContextTypes.DEFAULT_TYP
 
         await thinking_msg.delete()
 
-        full_text = t("answer", lang) + answer
-        if len(full_text) <= 4096:
-            await update.message.reply_text(full_text, parse_mode="Markdown")
-        else:
-            chunks = [full_text[i:i+4000] for i in range(0, len(full_text), 4000)]
-            for i, chunk in enumerate(chunks):
-                prefix = t("part", lang, i=i+1, n=len(chunks)) if len(chunks) > 1 else ""
-                await update.message.reply_text(prefix + chunk, parse_mode="Markdown")
+        await update.message.reply_text(t("answer", lang), parse_mode="Markdown")
+        await send_long_text(update.message, answer)
 
     except Exception as e:
         logger.error(f"Ошибка Q&A: {e}")
