@@ -841,21 +841,25 @@ async def handle_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Подтверждает платёж (обязательно для Telegram Stars)."""
+    logger.info(f"PreCheckout from user {update.pre_checkout_query.from_user.id}")
     await update.pre_checkout_query.answer(ok=True)
+    logger.info("PreCheckout answered OK")
 
 
 async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начисляет анализы после успешной оплаты."""
+    logger.info(f"SuccessfulPayment from user {update.effective_user.id}")
     user_id = update.effective_user.id
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
-    current = user_analysis_count.get(user_id, 0)
-    # Вычитаем ANALYSES_PER_PACK из счётчика (даём ещё анализов)
-    user_analysis_count[user_id] = max(0, current - ANALYSES_PER_PACK)
-    await add_paid(user_id, ANALYSES_PER_PACK)
-    logger.info(f"Пользователь {user_id} купил пакет {ANALYSES_PER_PACK} анализов.")
-    stats["total_purchases"] += 1
-    stats_log(user_id, "PURCHASE", f"{ANALYSES_PER_PACK} analyses for {STARS_PER_PACK} Stars")
-    await update.message.reply_text(t("payment_ok", lang))
+    try:
+        await add_paid(user_id, ANALYSES_PER_PACK)
+        logger.info(f"Пользователь {user_id} купил пакет {ANALYSES_PER_PACK} анализов.")
+        stats["total_purchases"] += 1
+        stats_log(user_id, "PURCHASE", f"{ANALYSES_PER_PACK} analyses for {STARS_PER_PACK} Stars")
+        await update.message.reply_text(t("payment_ok", lang))
+    except Exception as e:
+        logger.error(f"Payment processing error: {e}")
+        await update.message.reply_text(f"❌ Ошибка при зачислении: {e}")
 
 
 # ─── ЗАПУСК ──────────────────────────────────────────────────────────────────
