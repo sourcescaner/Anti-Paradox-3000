@@ -350,8 +350,9 @@ ABOUT_TEXT = {
 # ─── КОМАНДЫ ────────────────────────────────────────────────────────────────
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Сохраняем вручную выбранный язык — /start его не сбрасывает
+    lang = context.user_data.get("lang") or detect_lang(update.effective_user.language_code)
     context.user_data.clear()
-    lang = detect_lang(update.effective_user.language_code)
     context.user_data["lang"] = lang
     await update.message.reply_text(t("start_text", lang), parse_mode="Markdown")
 
