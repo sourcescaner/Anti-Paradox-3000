@@ -107,9 +107,31 @@ def build_system_prompt(mode: str = "classical", lang: str = "en") -> str:
         "- minimal_fix: bridge or weaken"
     )
 
-    # ─── Секции вывода ────────────────────────────────────────────────────────
+    # ─── Секции вывода (с переводом названий по языку) ───────────────────────
+    SECTION_TRANSLATIONS = {
+        "en": {
+            "0) TLDR": "0) TLDR",
+            "1) Легенда задач": "1) Task legend",
+            "2) Карта рассуждения": "2) Reasoning map",
+            "3) Найденные переключения": "3) Detected switches",
+            "4) Top-3 переусиления": "4) Top-3 overreaches",
+            "5) Минимальные правки": "5) Minimal fixes",
+            "6) Команды для уточнений": "6) Follow-up commands",
+        },
+        "uk": {
+            "0) TLDR": "0) TLDR",
+            "1) Легенда задач": "1) Легенда задач",
+            "2) Карта рассуждения": "2) Карта міркування",
+            "3) Найденные переключения": "3) Знайдені переходи",
+            "4) Top-3 переусиления": "4) Top-3 перебільшення",
+            "5) Минимальные правки": "5) Мінімальні правки",
+            "6) Команды для уточнений": "6) Команди для уточнень",
+        },
+    }
     fmt = p.get("output_format", {})
-    sections = fmt.get("required_sections", [])
+    sections_raw = fmt.get("required_sections", [])
+    trans = SECTION_TRANSLATIONS.get(lang, {})
+    sections = [trans.get(s, s) for s in sections_raw]
     sections_text = "\n".join(f"  {s}" for s in sections)
 
     # ─── Команды из interactive_handlers ──────────────────────────────────────
