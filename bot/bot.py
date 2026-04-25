@@ -817,8 +817,14 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # ─── ЗАПУСК ──────────────────────────────────────────────────────────────────
 
+async def on_startup(app):
+    """Инициализация БД при старте бота."""
+    await init_db()
+    logger.info("База данных инициализирована")
+
+
 def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app = Application.builder().token(TELEGRAM_TOKEN).post_init(on_startup).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -835,10 +841,6 @@ def main():
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_question))
-
-    logger.info("Инициализация базы данных...")
-    import asyncio as _asyncio
-    _asyncio.get_event_loop().run_until_complete(init_db())
 
     logger.info("Бот запущен...")
     app.run_polling(drop_pending_updates=True)
