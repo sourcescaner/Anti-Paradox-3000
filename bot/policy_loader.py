@@ -1,183 +1,160 @@
 import yaml
 import os
 
-POLICY_PATH = os.path.join(os.path.dirname(__file__), "..", "Files", "rm_bot_policy_v4.0.yml")
-POLICY_VERSION = "v4.0"
+POLICY_PATH = os.path.join(os.path.dirname(__file__), "..", "Files", "rm_bot_policy_v6.0.yml")
+POLICY_VERSION = "v6.0"
 
 
 def load_policy() -> dict:
     with open(POLICY_PATH, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
-    return data.get("rm_bot_policy", data)
+    return data
 
 
-def build_system_prompt(mode: str = "classical", lang: str = "ru") -> str:
+def build_system_prompt(mode: str = "classical", lang: str = "en") -> str:
     p = load_policy()
 
-    # --- Язык ---
+    # ─── Язык ────────────────────────────────────────────────────────────────
     if lang == "ru":
         lang_block = (
-            "ЯЗЫК: Весь ответ ТОЛЬКО на русском языке. Это жёсткое требование.\n"
+            "ЯЗЫК: Весь ответ ТОЛЬКО на русском языке.\n"
             "Цитаты из статьи оставляй на языке оригинала (в кавычках).\n"
-            "Все заголовки, объяснения, карточки — строго на русском.\n"
-            "НЕ используй английские слова кроме как внутри цитат из статьи."
+            "Все заголовки и объяснения — строго на русском."
         )
     elif lang == "uk":
         lang_block = (
-            "МОВА: Вся відповідь ТІЛЬКИ українською мовою. Це жорстка вимога.\n"
+            "МОВА: Вся відповідь ТІЛЬКИ українською мовою.\n"
             "Цитати зі статті залишай мовою оригіналу (в лапках).\n"
-            "Всі заголовки, пояснення, картки — строго українською.\n"
-            "НЕ використовуй іноземні слова окрім як всередині цитат зі статті."
+            "Всі заголовки та пояснення — строго українською."
         )
     else:
         lang_block = (
-            "LANGUAGE: Respond ONLY in English. All headings, explanations and switch items must be in English.\n"
-            "Keep quotes in the original language of the source (in quotation marks)."
+            "LANGUAGE: Respond ONLY in English.\n"
+            "Keep quotes in the original language of the source (in quotation marks).\n"
+            "All headings and explanations must be in English."
         )
 
-    # --- Режим ---
-    modes = p.get("modes", {})
-    mode_cfg = modes.get(mode, modes.get("classical", {}))
-    vocab_use = ", ".join(mode_cfg.get("vocabulary", {}).get("use", []))
-    vocab_avoid = ", ".join(mode_cfg.get("vocabulary", {}).get("avoid", []))
-
+    # ─── Режим ───────────────────────────────────────────────────────────────
     if mode == "rm":
         mode_block = (
-            f"РЕЖИМ: RM (с терминологией относительной математики)\n"
-            f"Используй: {vocab_use}\n"
-            f"Избегай: {vocab_avoid}\n"
-            f"Добавляй поле «RM-заметка» к каждому найденному переключению."
+            "MODE: RM — use Relative Mathematics terminology where applicable:\n"
+            "  несовместимые задачи, нарушение строгости, третий тип знания (как факт появления результата),\n"
+            "  относительная строгость, разрыв непрерывности вывода.\n"
+            "  Add a short rm_note to each switch (1 phrase)."
         )
     else:
         mode_block = (
-            f"РЕЖИМ: CLASSICAL (без терминологии RM)\n"
-            f"Используй: {vocab_use}\n"
-            f"Избегай: {vocab_avoid}\n"
-            f"Поле «RM-заметка» НЕ добавляй."
+            "MODE: CLASSIC — neutral analytical language only.\n"
+            "  Use: task switch, bridge, illegitimate transfer, probability layer, outcome-fact, wave-description.\n"
+            "  Do NOT use RM terminology. Do NOT add rm_note fields."
         )
 
-    # --- Задачи ---
-    tasks = p.get("core_concepts", {}).get("tasks", {})
+    # ─── Задачи (WAVE / PROB / FACT) ─────────────────────────────────────────
+    tasks = p.get("core_model", {}).get("tasks", {})
     tasks_text = ""
     for tid, tdef in tasks.items():
-        markers = ", ".join(tdef.get("markers_hint", [])[:6])
-        tasks_text += f"  {tid}: {tdef.get('meaning', '')}\n    Маркеры: {markers}\n"
+        markers = ", ".join(tdef.get("markers", [])[:6])
+        tasks_text += f"  {tid}: {tdef.get('meaning', '')}\n    Markers: {markers}\n"
 
-    # --- Дисциплины ---
-    disciplines = p.get("core_concepts", {}).get("disciplines", {})
+    # ─── Дисциплины ───────────────────────────────────────────────────────────
+    disciplines = p.get("core_model", {}).get("disciplines", {})
     disc_text = "\n".join(f"  {did}: {ddef}" for did, ddef in disciplines.items())
 
-    # --- Мосты ---
-    bridges = p.get("core_concepts", {}).get("bridges", {}).get("types", {})
-    bridge_text = ""
-    for bid, bdef in bridges.items():
-        bridge_text += f"  {bid}: {bdef.get('meaning', '')}\n"
-    bridge_rule = p.get("core_concepts", {}).get("bridges", {}).get("rule", [""])[0]
+    # ─── Мосты ────────────────────────────────────────────────────────────────
+    bridges = p.get("bridges", {})
+    bridge_types = bridges.get("types", {})
+    pseudo_markers = bridges.get("pseudo_bridge_markers", [])
 
-    # --- Роли блоков ---
-    roles = p.get("classification", {}).get("role_rules", {})
-    roles_text = ""
-    for role, rdef in roles.items():
-        hints = " / ".join(rdef.get("heuristic", []))
-        roles_text += f"  {role}: {hints}\n"
+    bridge_text = "  ACCEPTABLE BRIDGES:\n"
+    for bid, bdef in bridge_types.items():
+        markers = ", ".join(bdef.get("markers", [])[:4])
+        bridge_text += f"    {bid}: {bdef.get('meaning', '')} | markers: {markers}\n"
 
-    fact_guardrail = p.get("classification", {}).get("task_rules", {}).get("FACT_guardrail", {})
-    fact_must = " | ".join(fact_guardrail.get("must_have_at_least_one", []))
-    fact_otherwise = " | ".join(fact_guardrail.get("otherwise_prefer", []))
+    bridge_text += "\n  PSEUDO-BRIDGE WORDING (NOT a real bridge — flag as PSEUDO):\n"
+    for pm in pseudo_markers:
+        bridge_text += f"    • {pm}\n"
 
-    # --- Правила переключений ---
-    switch_rules = p.get("switch_detection", {}).get("rules", [])
-    switches_text = ""
-    for rule in switch_rules:
-        rid = rule.get("id", "")
-        sev_base = rule.get("severity", {}).get("base", "?")
-        sev_add = rule.get("severity", {}).get("add_if_strong_inference_language", 0)
-        explain_key = "explain_rm" if mode == "rm" else "explain_classical"
-        explain = rule.get(explain_key, rule.get("explain_classical", "")).strip()
-        fix_bridge = rule.get("minimal_fix_templates", {}).get("bridge", "")
-        fix_weaken = rule.get("minimal_fix_templates", {}).get("weaken", "")
-        switches_text += (
-            f"\n  [{rid}] severity={sev_base}+{sev_add} при сильном языке вывода\n"
-            f"  Объяснение: {explain}\n"
-            f"  Мост: {fix_bridge}\n"
-            f"  Ослабление: {fix_weaken}\n"
-        )
+    # ─── Правила обнаружения ──────────────────────────────────────────────────
+    det = p.get("detection_rules", {})
+    inf_markers = ", ".join(det.get("inference_markers", []))
+    fact_gate = "\n".join(f"  • {r}" for r in det.get("fact_gate_rule", []))
+    switch_def = "\n".join(f"  • {s}" for s in det.get("switch_definition", []))
 
-    # --- Формат отчёта ---
-    reporting = p.get("reporting", {})
-    sections = reporting.get("required_sections_order", [])
-    sections_text = "\n".join(f"  {s}" for s in sections)
+    # ─── Требование доказательств ─────────────────────────────────────────────
+    evid = p.get("evidence_requirement_for_each_switch", {})
+    must_include = "\n".join(f"  • {e}" for e in evid.get("must_include", []))
+    if_missing = "\n".join(f"  • {e}" for e in evid.get("if_missing", []))
 
-    task_map_fmt = reporting.get("task_map_constraints", {})
-    task_map_max = task_map_fmt.get("max_lines", 12)
+    # ─── Структура вывода ─────────────────────────────────────────────────────
+    out = p.get("output", {})
+    structure = out.get("structure", [])
+    structure_text = "\n".join(f"  {s}" for s in structure)
 
-    switch_fields = reporting.get("switch_item_format", {}).get("must_include_fields", [])
-    switch_fields_text = "\n".join(f"  • {f}" for f in switch_fields)
+    # ─── Шаблон S-пункта ──────────────────────────────────────────────────────
+    sw_fields = p.get("switch_item_template", {}).get("fields", [])
+    tmpl_text = "\n".join(f"  • {f}" for f in sw_fields)
 
-    no_switches_msg = reporting.get("if_no_switches_found", {}).get("output", "")
+    # ─── Команды ──────────────────────────────────────────────────────────────
+    commands = p.get("commands", {})
+    cmd_text = ""
+    for cmd_name, cmd_def in commands.items():
+        syntax = cmd_def.get("syntax", cmd_name)
+        out_lines = cmd_def.get("output", "")
+        if isinstance(out_lines, list):
+            out_lines = out_lines[0]
+        cmd_text += f"  {syntax} — {out_lines}\n"
 
-    # --- Команды ---
-    commands = p.get("interaction", {}).get("commands_supported", [])
-    commands_text = ""
-    for cmd in commands:
-        commands_text += f"  {cmd.get('syntax','')}: {cmd.get('meaning','')}\n"
-
-    # --- Ворота качества ---
-    gates = p.get("quality_gates", [])
-    gates_text = "\n".join(f"  - {g}" for g in gates)
-
-    prompt = f"""You are a scientific article analyzer. You detect hidden logical switches between incompatible mathematical tasks (WAVE, PROB, FACT) in quantum and quantum-like reasoning.
+    # ─── Сборка промпта ───────────────────────────────────────────────────────
+    prompt = f"""You are a scientific article analyzer. You detect hidden logical switches between incompatible mathematical tasks (WAVE, PROB, FACT) in quantum and quantum-like reasoning. Policy version: {POLICY_VERSION}.
 
 {lang_block}
 
 {mode_block}
 
 ═══════════════════════════════════════
-ТРИ ЗАДАЧИ (не смешивай без явного моста):
+THREE TASKS:
 {tasks_text}
-ВАЖНО — метка FACT:
-  Ставь ТОЛЬКО если есть хотя бы одно из: {fact_must}
-  Иначе предпочитай: {fact_otherwise}
-
 ═══════════════════════════════════════
-ЧЕТЫРЕ ДИСЦИПЛИНЫ (анализируй каждый блок по всем четырём):
+FOUR DISCIPLINES:
 {disc_text}
 
 ═══════════════════════════════════════
-ТИПЫ МОСТОВ (только явное присутствие в тексте считается мостом):
+BRIDGES:
 {bridge_text}
-Правило: {bridge_rule}
 
 ═══════════════════════════════════════
-РОЛИ БЛОКОВ (определяй роль каждого блока перед анализом переключений):
-{roles_text}
-ВАЖНО: Не помечай переключения внутри блоков с ролью DEFINITION.
-Только блоки с ролью INFERENCE могут быть источником переключений.
+DETECTION RULES:
+Inference markers (trigger search): {inf_markers}
+
+FACT gate rule:
+{fact_gate}
+
+Switch definition:
+{switch_def}
 
 ═══════════════════════════════════════
-ПРАВИЛА ПЕРЕКЛЮЧЕНИЙ:
-{switches_text}
+EVIDENCE REQUIREMENT (for every S-item):
+{must_include}
+
+If evidence is missing:
+{if_missing}
 
 ═══════════════════════════════════════
-ОБЯЗАТЕЛЬНЫЕ РАЗДЕЛЫ ОТЧЁТА (строго в этом порядке):
-{sections_text}
+OUTPUT STRUCTURE (required sections, in this order):
+{structure_text}
 
-КАРТА ЗАДАЧ: максимум {task_map_max} строк, сжатый формат.
-
-ФОРМАТ КАЖДОГО ПЕРЕКЛЮЧЕНИЯ (все поля обязательны):
-{switch_fields_text}
-
-ЕСЛИ ПЕРЕКЛЮЧЕНИЙ НЕ НАЙДЕНО:
-{no_switches_msg}
+SWITCH ITEM TEMPLATE (every S-item must include):
+{tmpl_text}
 
 ═══════════════════════════════════════
-КОМАНДЫ ДЛЯ УТОЧНЕНИЙ (раздел E — всегда включай в конец отчёта):
-{commands_text}
+FOLLOW-UP COMMANDS (support these after initial report):
+{cmd_text}
 ═══════════════════════════════════════
-ТРЕБОВАНИЯ К КАЧЕСТВУ:
-{gates_text}
-
-ВАЖНО: Всегда выполняй анализ. Никогда не отказывайся от анализа из-за размера текста или темы.
-Точность важнее полноты. Не выдумывай переключения.
+IMPORTANT:
+  • No markdown tables.
+  • Each S-item must be 6–10 lines, not a wall of text.
+  • Always perform the analysis. Never refuse due to text length.
+  • Accuracy over completeness. Do NOT invent switches without evidence.
+  • If you cannot quote a block (pX-bY), say so explicitly — do not hallucinate.
 """
     return prompt

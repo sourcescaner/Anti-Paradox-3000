@@ -1,12 +1,12 @@
 import logging
 import asyncio
 import sys
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
-    CallbackQueryHandler, ContextTypes, filters
+    CallbackQueryHandler, PreCheckoutQueryHandler, ContextTypes, filters
 )
-from config import TELEGRAM_TOKEN, MAX_PDF_SIZE_MB, MAX_FREE_ANALYSES, ADMIN_USER_IDS, DEFAULT_LANGUAGE
+from config import TELEGRAM_TOKEN, MAX_PDF_SIZE_MB, MAX_FREE_ANALYSES, ADMIN_USER_IDS, DEFAULT_LANGUAGE, ANALYSES_PER_PACK, STARS_PER_PACK
 from policy_loader import POLICY_VERSION
 from analyzer import analyze_article
 
@@ -24,51 +24,321 @@ processed_message_ids: set[int] = set()
 processed_callback_ids: set[str] = set()
 
 
+# ─── ПЕРЕВОДЫ ────────────────────────────────────────────────────────────────
+
+T = {
+    "start_text": {
+        "en": (
+            "👋 Hello! I analyze scientific articles for logical errors and hidden switches "
+            "between incompatible mathematical descriptions.\n\n"
+            "📄 Send me a PDF article and choose the analysis mode:\n\n"
+            "• *Classic* — logical and formal errors, neutral language\n"
+            "• *RM mode* — using Relative Mathematics concepts\n\n"
+            f"🆓 First {MAX_FREE_ANALYSES} analyses are free."
+        ),
+        "ru": (
+            "👋 Привет! Я анализирую научные статьи на логические ошибки и скрытые переходы "
+            "между несовместимыми описаниями.\n\n"
+            "📄 Пришли мне PDF-файл статьи и выбери режим анализа:\n\n"
+            "• *Классический* — логические и формальные ошибки, нейтральный язык\n"
+            "• *С терминами ОМ* — с применением концепций относительной математики\n\n"
+            f"🆓 Первые {MAX_FREE_ANALYSES} анализа бесплатно."
+        ),
+        "uk": (
+            "👋 Привіт! Я аналізую наукові статті на логічні помилки та приховані переходи "
+            "між несумісними описами.\n\n"
+            "📄 Надішли мені PDF-файл статті та вибери режим аналізу:\n\n"
+            "• *Класичний* — логічні та формальні помилки, нейтральна мова\n"
+            "• *Режим RM* — з використанням концепцій відносної математики\n\n"
+            f"🆓 Перші {MAX_FREE_ANALYSES} аналізи безкоштовно."
+        ),
+    },
+    "no_pdf_hint": {
+        "en": "📄 Send a PDF article to analyze.\nOr type /help to learn how to use the bot.",
+        "ru": "📄 Пришли PDF-файл статьи для анализа.\nИли введи /help чтобы узнать как пользоваться ботом.",
+        "uk": "📄 Надішли PDF-файл статті для аналізу.\nАбо введи /help щоб дізнатися як користуватися ботом.",
+    },
+    "not_pdf": {
+        "en": "⚠️ Please send a PDF file.",
+        "ru": "⚠️ Пожалуйста, отправь файл в формате PDF.",
+        "uk": "⚠️ Будь ласка, надішли файл у форматі PDF.",
+    },
+    "too_large": {
+        "en": f"⚠️ File is too large. Maximum {MAX_PDF_SIZE_MB} MB.",
+        "ru": f"⚠️ Файл слишком большой. Максимум {MAX_PDF_SIZE_MB} МБ.",
+        "uk": f"⚠️ Файл занадто великий. Максимум {MAX_PDF_SIZE_MB} МБ.",
+    },
+    "limit_reached": {
+        "en": f"⚠️ You've used all {MAX_FREE_ANALYSES} free analyses.\n\nBuy a pack of {ANALYSES_PER_PACK} analyses for {STARS_PER_PACK} ⭐ Stars (~$1):",
+        "ru": f"⚠️ Использованы все {MAX_FREE_ANALYSES} бесплатных анализа.\n\nКупи пакет из {ANALYSES_PER_PACK} анализов за {STARS_PER_PACK} ⭐ Stars (~$1):",
+        "uk": f"⚠️ Використано всі {MAX_FREE_ANALYSES} безкоштовних аналізи.\n\nКупи пакет з {ANALYSES_PER_PACK} аналізів за {STARS_PER_PACK} ⭐ Stars (~$1):",
+    },
+    "buy_button": {
+        "en": f"⭐ Buy {ANALYSES_PER_PACK} analyses for {STARS_PER_PACK} Stars",
+        "ru": f"⭐ Купить {ANALYSES_PER_PACK} анализов за {STARS_PER_PACK} Stars",
+        "uk": f"⭐ Купити {ANALYSES_PER_PACK} аналізів за {STARS_PER_PACK} Stars",
+    },
+    "session_expired": {
+        "en": "⚠️ Session expired. Please send the PDF again.",
+        "ru": "⚠️ Сессия истекла. Пришли PDF ещё раз.",
+        "uk": "⚠️ Сесія закінчилась. Надішли PDF ще раз.",
+    },
+    "analyzing": {
+        "en": "⏳ Starting *{mode}* analysis...\n\nThis will take 30–60 seconds.",
+        "ru": "⏳ Запускаю *{mode}* анализ...\n\nЭто займёт 30–60 секунд.",
+        "uk": "⏳ Запускаю *{mode}* аналіз...\n\nЦе займе 30–60 секунд.",
+    },
+    "result_header": {
+        "en": "📊 *Analysis result* ({mode}) | {version} {flag}\n\n",
+        "ru": "📊 *Результат анализа* ({mode}) | {version} {flag}\n\n",
+        "uk": "📊 *Результат аналізу* ({mode}) | {version} {flag}\n\n",
+    },
+    "part": {
+        "en": "*[Part {i}/{n}]*\n\n",
+        "ru": "*[Часть {i}/{n}]*\n\n",
+        "uk": "*[Частина {i}/{n}]*\n\n",
+    },
+    "hint": {
+        "en": (
+            "🔧 *What's next?*\n\n"
+            "• Press a button to adjust conclusions\n"
+            "• Or just type a question about the analysis, e.g.:\n"
+            "  _\"what does switch S2 mean?\"_\n"
+            "  _\"why is S1 an error?\"_\n"
+            "  _\"suggest a fix for S3\"_"
+        ),
+        "ru": (
+            "🔧 *Что дальше?*\n\n"
+            "• Нажми кнопку чтобы скорректировать выводы\n"
+            "• Или просто напиши вопрос по анализу, например:\n"
+            "  _«что значит переключение S2?»_\n"
+            "  _«почему S1 — это ошибка?»_\n"
+            "  _«предложи конкретную правку для S3»_"
+        ),
+        "uk": (
+            "🔧 *Що далі?*\n\n"
+            "• Натисни кнопку щоб скоригувати висновки\n"
+            "• Або просто напиши запитання по аналізу, наприклад:\n"
+            "  _«що означає перехід S2?»_\n"
+            "  _«чому S1 — це помилка?»_\n"
+            "  _«запропонуй правку для S3»_"
+        ),
+    },
+    "adjust_buttons": {
+        "en": ["⬆️ Strengthen", "⬇️ Soften", "🔄 New analysis"],
+        "ru": ["⬆️ Усилить выводы", "⬇️ Ослабить выводы", "🔄 Новый анализ"],
+        "uk": ["⬆️ Посилити висновки", "⬇️ Пом'якшити висновки", "🔄 Новий аналіз"],
+    },
+    "remaining": {
+        "en": "ℹ️ Free analyses remaining: {n}",
+        "ru": "ℹ️ Осталось бесплатных анализов: {n}",
+        "uk": "ℹ️ Залишилось безкоштовних аналізів: {n}",
+    },
+    "error_analysis": {
+        "en": "❌ An error occurred during analysis. Please try again or contact the administrator.",
+        "ru": "❌ Произошла ошибка при анализе. Попробуй ещё раз или обратись к администратору.",
+        "uk": "❌ Сталася помилка під час аналізу. Спробуй ще раз або зверніться до адміністратора.",
+    },
+    "new_analysis": {
+        "en": "🔄 Ready for a new analysis. Send a PDF file.",
+        "ru": "🔄 Готов к новому анализу. Пришли PDF-файл статьи.",
+        "uk": "🔄 Готовий до нового аналізу. Надішли PDF-файл статті.",
+    },
+    "no_previous": {
+        "en": "⚠️ No previous analysis. Send a PDF first.",
+        "ru": "⚠️ Нет предыдущего анализа. Пришли PDF снова.",
+        "uk": "⚠️ Немає попереднього аналізу. Надішли PDF знову.",
+    },
+    "strengthen_label": {
+        "en": "⬆️ Strengthened conclusions",
+        "ru": "⬆️ Усиленные выводы",
+        "uk": "⬆️ Посилені висновки",
+    },
+    "soften_label": {
+        "en": "⬇️ Softened conclusions",
+        "ru": "⬇️ Смягчённые выводы",
+        "uk": "⬇️ Пом'якшені висновки",
+    },
+    "error_adjust": {
+        "en": "❌ Error while adjusting conclusions.",
+        "ru": "❌ Ошибка при корректировке выводов.",
+        "uk": "❌ Помилка під час коригування висновків.",
+    },
+    "thinking": {
+        "en": "💭 Thinking...",
+        "ru": "💭 Думаю...",
+        "uk": "💭 Думаю...",
+    },
+    "answer": {
+        "en": "💬 *Answer:*\n\n",
+        "ru": "💬 *Ответ:*\n\n",
+        "uk": "💬 *Відповідь:*\n\n",
+    },
+    "error_qa": {
+        "en": "❌ Could not answer the question. Please try again.",
+        "ru": "❌ Не удалось ответить на вопрос. Попробуй ещё раз.",
+        "uk": "❌ Не вдалося відповісти на запитання. Спробуй ще раз.",
+    },
+    "payment_title": {
+        "en": f"{ANALYSES_PER_PACK} analyses — Anti-Paradox-3000",
+        "ru": f"{ANALYSES_PER_PACK} анализов — Anti-Paradox-3000",
+        "uk": f"{ANALYSES_PER_PACK} аналізів — Anti-Paradox-3000",
+    },
+    "payment_desc": {
+        "en": f"A pack of {ANALYSES_PER_PACK} scientific article analyses.",
+        "ru": f"Пакет из {ANALYSES_PER_PACK} анализов научных статей.",
+        "uk": f"Пакет з {ANALYSES_PER_PACK} аналізів наукових статей.",
+    },
+    "payment_ok": {
+        "en": f"✅ Payment received! {ANALYSES_PER_PACK} analyses added.\nSend a PDF — the bot is ready. 🚀",
+        "ru": f"✅ Оплата получена! Добавлено {ANALYSES_PER_PACK} анализов.\nОтправляй PDF — бот готов к работе. 🚀",
+        "uk": f"✅ Оплату отримано! Додано {ANALYSES_PER_PACK} аналізів.\nНадсилай PDF — бот готовий до роботи. 🚀",
+    },
+    "mode_label": {
+        "classical": {"en": "Classic", "ru": "Классический", "uk": "Класичний"},
+        "rm": {"en": "RM mode", "ru": "Режим RM", "uk": "Режим RM"},
+    },
+}
+
+
+def t(key: str, lang: str, **kwargs) -> str:
+    """Возвращает перевод строки на нужный язык."""
+    text = T.get(key, {}).get(lang) or T.get(key, {}).get("en", "")
+    return text.format(**kwargs) if kwargs else text
+
+
+def mode_name(mode: str, lang: str) -> str:
+    """Возвращает локализованное название режима анализа."""
+    return T["mode_label"].get(mode, T["mode_label"]["classical"]).get(lang, mode)
+
+
+def detect_lang(tg_lang_code: str | None) -> str:
+    """Определяет язык из Telegram language_code пользователя."""
+    code = (tg_lang_code or "").lower()
+    if code.startswith("ru"):
+        return "ru"
+    if code.startswith("uk"):
+        return "uk"
+    return "en"
+
+
+# ─── СТАТИЧНЫЕ ТЕКСТЫ /help и /about ────────────────────────────────────────
+
+HELP_TEXT = {
+    "en": (
+        "📖 *How to use the bot:*\n\n"
+        "1. Send a PDF article\n"
+        "2. Choose analysis mode (Classic / RM)\n"
+        "3. Get a detailed report\n"
+        "4. Ask a follow-up question — just type it\n\n"
+        "*Commands:*\n"
+        "/start — welcome message\n"
+        "/help — this help\n"
+        "/about — about the analysis method\n"
+        "/new — start a new analysis\n"
+        "/en — switch to English 🇬🇧\n"
+        "/ru — русский язык 🇷🇺\n"
+        "/uk — українська мова 🇺🇦\n\n"
+    ),
+    "ru": (
+        "📖 *Как пользоваться ботом:*\n\n"
+        "1. Отправь PDF-файл статьи\n"
+        "2. Выбери режим анализа (Классический / RM)\n"
+        "3. Получи детальный отчёт\n"
+        "4. Задай вопрос по результату — просто напиши текст\n\n"
+        "*Команды:*\n"
+        "/start — приветствие\n"
+        "/help — эта справка\n"
+        "/about — о методе анализа\n"
+        "/new — начать новый анализ\n"
+        "/en — switch to English 🇬🇧\n"
+        "/ru — русский язык 🇷🇺\n"
+        "/uk — українська мова 🇺🇦\n\n"
+    ),
+    "uk": (
+        "📖 *Як користуватися ботом:*\n\n"
+        "1. Надішли PDF-файл статті\n"
+        "2. Вибери режим аналізу (Класичний / RM)\n"
+        "3. Отримай детальний звіт\n"
+        "4. Постав запитання по результату — просто напиши текст\n\n"
+        "*Команди:*\n"
+        "/start — привітання\n"
+        "/help — ця довідка\n"
+        "/about — про метод аналізу\n"
+        "/new — почати новий аналіз\n"
+        "/en — switch to English 🇬🇧\n"
+        "/ru — русский язык 🇷🇺\n"
+        "/uk — українська мова 🇺🇦\n\n"
+    ),
+}
+
+ABOUT_TEXT = {
+    "en": (
+        f"🔬 *About the analysis method* (policy {POLICY_VERSION})\n\n"
+        "The bot detects hidden logical switches between incompatible mathematical tasks:\n\n"
+        "• *WAVE→FACT* — wave/branch description used as a factual claim without an explicit bridge\n"
+        "• *PROB→FACT* — probability used to derive an outcome-fact without measurement/registration\n"
+        "• *Pseudo-bridges* — 'collapse/projection' wording flagged as NOT a real bridge\n"
+        "• *Overreaches* — necessity language (must/uniquely) near a hidden switch\n\n"
+        "Based on the Relative Mathematics concept."
+    ),
+    "ru": (
+        f"🔬 *О методе анализа* (политика {POLICY_VERSION})\n\n"
+        "Бот ищет скрытые логические переходы между несовместимыми задачами:\n\n"
+        "• *WAVE→FACT* — волновое описание используется как факт без явного моста\n"
+        "• *PROB→FACT* — вероятность используется для вывода факта без регистрации\n"
+        "• *Псевдо-мосты* — 'коллапс/проекция' не считается мостом и флагируется\n"
+        "• *Переусиления* — язык необходимости (must/uniquely) рядом со скрытым переходом\n\n"
+        "Метод основан на концепции относительной математики."
+    ),
+    "uk": (
+        f"🔬 *Про метод аналізу* (політика {POLICY_VERSION})\n\n"
+        "Бот шукає приховані логічні переходи між несумісними задачами:\n\n"
+        "• *WAVE→FACT* — хвильовий опис використовується як факт без явного мосту\n"
+        "• *PROB→FACT* — ймовірність використовується для виведення факту без реєстрації\n"
+        "• *Псевдо-мости* — 'колапс/проекція' не вважається мостом\n"
+        "• *Переперебільшення* — мова необхідності (must/uniquely) поруч із прихованим переходом\n\n"
+        "Метод заснований на концепції відносної математики."
+    ),
+}
+
+
 # ─── КОМАНДЫ ────────────────────────────────────────────────────────────────
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    text = (
-        "👋 Привет! Я анализирую научные статьи на логические ошибки и скрытые переходы между несовместимыми описаниями.\n\n"
-        "📄 Пришли мне PDF-файл статьи и выбери режим анализа:\n\n"
-        "• *Классический* — логические и формальные ошибки, нейтральный язык\n"
-        "• *С терминами ОМ* — с применением концепций относительной математики\n\n"
-        f"🆓 Первые {MAX_FREE_ANALYSES} анализа бесплатно."
-    )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    lang = detect_lang(update.effective_user.language_code)
+    context.user_data["lang"] = lang
+    await update.message.reply_text(t("start_text", lang), parse_mode="Markdown")
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "📖 *Как пользоваться ботом:*\n\n"
-        "1. Отправь PDF-файл статьи\n"
-        "2. Выбери язык и режим анализа\n"
-        "3. Получи детальный отчёт\n"
-        "4. Задай вопрос по результату — просто напиши текст\n\n"
-        "*Команды:*\n"
-        "/start — начало работы\n"
-        "/help — эта справка\n"
-        "/about — о методе анализа\n"
-        "/new — начать новый анализ"
-    )
+    lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
+    text = HELP_TEXT.get(lang, HELP_TEXT["en"]) + f"_Policy: {POLICY_VERSION}_"
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "🔬 *О методе анализа*\n\n"
-        "Бот ищет скрытые логические переходы между несовместимыми математическими описаниями:\n\n"
-        "• *WAVE→FACT* — переход волновое описание → факт без явного моста\n"
-        "• *PROB→FACT* — переход вероятность → факт без явного моста (измерения/регистрации)\n"
-        "• *Переусиления* — слишком сильные выводы (must/uniquely) в смешанных утверждениях\n\n"
-        "Метод основан на концепции относительной математики."
-    )
+    lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
+    text = ABOUT_TEXT.get(lang, ABOUT_TEXT["en"])
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
 async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
     context.user_data.clear()
-    await update.message.reply_text("🔄 Готов к новому анализу. Пришли PDF-файл статьи.")
+    context.user_data["lang"] = lang  # сохраняем язык после очистки
+    await update.message.reply_text(t("new_analysis", lang))
+
+
+async def lang_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Переключает язык по команде /en, /ru, /uk."""
+    cmd = update.message.text.strip().lstrip("/").lower()
+    lang_map = {"en": ("en", "🇬🇧 English"), "ru": ("ru", "🇷🇺 Русский"), "uk": ("uk", "🇺🇦 Українська")}
+    if cmd in lang_map:
+        context.user_data["lang"] = lang_map[cmd][0]
+        context.user_data["last_lang"] = lang_map[cmd][0]
+        await update.message.reply_text(f"Language set: {lang_map[cmd][1]}")
 
 
 # ─── АВТООЧИСТКА КОНТЕКСТА ───────────────────────────────────────────────────
@@ -95,37 +365,46 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     document = update.message.document
 
+    # Язык: из сохранённых настроек или авто-определение из профиля Telegram
+    lang = context.user_data.get("lang") or detect_lang(update.effective_user.language_code)
+
     if document.mime_type != "application/pdf":
-        await update.message.reply_text("⚠️ Пожалуйста, отправь файл в формате PDF.")
+        await update.message.reply_text(t("not_pdf", lang))
         return
 
     if document.file_size > MAX_PDF_SIZE_MB * 1024 * 1024:
-        await update.message.reply_text(f"⚠️ Файл слишком большой. Максимум {MAX_PDF_SIZE_MB} МБ.")
+        await update.message.reply_text(t("too_large", lang))
         return
 
     count = user_analysis_count.get(user_id, 0)
     if count >= MAX_FREE_ANALYSES and user_id not in ADMIN_USER_IDS:
-        await update.message.reply_text(
-            f"⚠️ Вы использовали все {MAX_FREE_ANALYSES} бесплатных анализа.\n"
-            "💳 Для продолжения необходима подписка (скоро)."
-        )
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(t("buy_button", lang), callback_data="buy_pack")
+        ]])
+        await update.message.reply_text(t("limit_reached", lang), reply_markup=keyboard)
         return
 
     context.user_data["pending_pdf_id"] = document.file_id
     context.user_data["pending_pdf_name"] = document.file_name
     context.user_data.pop("last_result", None)
-
-    # Определяем язык автоматически из настроек Telegram
-    tg_lang = update.effective_user.language_code or ""
-    if tg_lang.startswith("ru"):
-        lang = "ru"
-    elif tg_lang.startswith("uk"):
-        lang = "uk"
-    else:
-        lang = "en"
-    context.user_data["lang"] = lang
+    context.user_data["lang"] = lang  # фиксируем язык
 
     lang_flag = {"ru": "🇷🇺", "uk": "🇺🇦", "en": "🇬🇧"}.get(lang, "🇬🇧")
+
+    panel_text = {
+        "ru": f"📄 *{document.file_name}*\n\nЯзык определён автоматически: {lang_flag}\nИзменить ↑ или выбери режим анализа ↓",
+        "uk": f"📄 *{document.file_name}*\n\nМову визначено автоматично: {lang_flag}\nЗмінити ↑ або вибери режим аналізу ↓",
+        "en": f"📄 *{document.file_name}*\n\nLanguage auto-detected: {lang_flag}\nChange if needed ↑ then choose analysis mode ↓",
+    }
+
+    mode_buttons = {
+        "ru": [InlineKeyboardButton("📋 Классический", callback_data="mode_classic"),
+               InlineKeyboardButton("🔬 Режим RM", callback_data="mode_rm")],
+        "uk": [InlineKeyboardButton("📋 Класичний", callback_data="mode_classic"),
+               InlineKeyboardButton("🔬 Режим RM", callback_data="mode_rm")],
+        "en": [InlineKeyboardButton("📋 Classic", callback_data="mode_classic"),
+               InlineKeyboardButton("🔬 RM mode", callback_data="mode_rm")],
+    }
 
     keyboard = [
         [
@@ -133,17 +412,12 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🇺🇦 Українська", callback_data="lang_uk"),
             InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"),
         ],
-        [
-            InlineKeyboardButton("📋 Classic", callback_data="mode_classic"),
-            InlineKeyboardButton("🔬 RM mode", callback_data="mode_rm"),
-        ],
+        mode_buttons.get(lang, mode_buttons["en"]),
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"📄 *{document.file_name}*\n\n"
-        f"Language auto-detected: {lang_flag}\n"
-        f"Change if needed ↑ then choose analysis mode ↓",
+        panel_text.get(lang, panel_text["en"]),
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
@@ -166,17 +440,18 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
         lang_map = {"lang_ru": "ru", "lang_uk": "uk", "lang_en": "en"}
         label_map = {"lang_ru": "🇷🇺 Русский", "lang_uk": "🇺🇦 Українська", "lang_en": "🇬🇧 English"}
         context.user_data["lang"] = lang_map[query.data]
-        await query.answer(f"Язык выбран: {label_map[query.data]}", show_alert=False)
+        await query.answer(f"Language: {label_map[query.data]}", show_alert=False)
         return
 
     user_id = update.effective_user.id
+    lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
     mode = "classical" if query.data == "mode_classic" else "rm"
-    mode_label = "Классический" if mode == "classical" else "С терминами относительной математики"
+    mode_lbl = mode_name(mode, lang)
 
     pdf_id = context.user_data.get("pending_pdf_id")
     if not pdf_id:
         try:
-            await query.edit_message_text("⚠️ Сессия истекла. Пришли PDF ещё раз.")
+            await query.edit_message_text(t("session_expired", lang))
         except Exception:
             pass
         return
@@ -187,7 +462,7 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
     try:
         await query.edit_message_text(
-            f"⏳ Запускаю *{mode_label}* анализ...\n\nЭто займёт 30–60 секунд.",
+            t("analyzing", lang, mode=mode_lbl),
             parse_mode="Markdown"
         )
     except Exception:
@@ -197,7 +472,6 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
         file = await context.bot.get_file(pdf_id)
         pdf_bytes = await file.download_as_bytearray()
 
-        lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
         result = await analyze_article(bytes(pdf_bytes), mode=mode, lang=lang)
 
         user_analysis_count[user_id] = user_analysis_count.get(user_id, 0) + 1
@@ -207,15 +481,17 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data["last_mode"] = mode
         context.user_data["last_lang"] = lang
 
-        # Очищаем результат через 1 час
-        context.job_queue.run_once(
-            _clear_user_context,
-            when=3600,
-            data={"user_id": user_id, "chat_id": update.effective_chat.id},
-            name=f"clear_{user_id}"
-        )
+        # Очищаем результат через 1 час (если job-queue установлен)
+        if context.job_queue:
+            context.job_queue.run_once(
+                _clear_user_context,
+                when=3600,
+                data={"user_id": user_id, "chat_id": update.effective_chat.id},
+                name=f"clear_{user_id}"
+            )
 
-        header = f"📊 *Результат анализа* ({mode_label}) | политика {POLICY_VERSION}\n\n"
+        lang_flag = {"ru": "🇷🇺", "uk": "🇺🇦", "en": "🇬🇧"}.get(lang, "🇬🇧")
+        header = t("result_header", lang, mode=mode_lbl, version=POLICY_VERSION, flag=lang_flag)
         full_text = header + result
 
         if len(full_text) <= 4096:
@@ -223,38 +499,29 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             chunks = [full_text[i:i+4000] for i in range(0, len(full_text), 4000)]
             for i, chunk in enumerate(chunks):
-                prefix = f"*[Часть {i+1}/{len(chunks)}]*\n\n" if len(chunks) > 1 else ""
+                prefix = t("part", lang, i=i+1, n=len(chunks)) if len(chunks) > 1 else ""
                 await query.message.reply_text(prefix + chunk, parse_mode="Markdown")
 
         # Кнопки корректировки
+        btns = T["adjust_buttons"].get(lang, T["adjust_buttons"]["en"])
         adjust_keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("⬆️ Усилить выводы", callback_data="adjust_strengthen"),
-                InlineKeyboardButton("⬇️ Ослабить выводы", callback_data="adjust_weaken"),
+                InlineKeyboardButton(btns[0], callback_data="adjust_strengthen"),
+                InlineKeyboardButton(btns[1], callback_data="adjust_weaken"),
             ],
             [
-                InlineKeyboardButton("🔄 Новый анализ", callback_data="new_analysis"),
+                InlineKeyboardButton(btns[2], callback_data="new_analysis"),
             ]
         ])
 
-        hint = (
-            "🔧 *Что дальше?*\n\n"
-            "• Нажми кнопку чтобы скорректировать выводы\n"
-            "• Или просто напиши вопрос по анализу, например:\n"
-            "  _«что значит переключение S2?»_\n"
-            "  _«почему S1 — это ошибка?»_\n"
-            "  _«предложи конкретную правку для S3»_"
-        )
-        await query.message.reply_text(hint, reply_markup=adjust_keyboard, parse_mode="Markdown")
+        await query.message.reply_text(t("hint", lang), reply_markup=adjust_keyboard, parse_mode="Markdown")
 
-        if remaining > 0:
-            await query.message.reply_text(f"ℹ️ Осталось бесплатных анализов: {remaining}")
+        if remaining > 0 and user_id not in ADMIN_USER_IDS:
+            await query.message.reply_text(t("remaining", lang, n=remaining))
 
     except Exception as e:
         logger.error(f"Ошибка анализа: {e}")
-        await query.message.reply_text(
-            "❌ Произошла ошибка при анализе. Попробуй ещё раз или обратись к администратору."
-        )
+        await query.message.reply_text(t("error_analysis", lang))
     finally:
         context.user_data["analyzing"] = False
         context.user_data.pop("pending_pdf_id", None)
@@ -266,41 +533,35 @@ async def handle_adjust(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
+    lang = context.user_data.get("last_lang", context.user_data.get("lang", DEFAULT_LANGUAGE))
+
     if query.data == "new_analysis":
         context.user_data.pop("last_result", None)
         context.user_data.pop("pending_pdf_id", None)
-        await query.message.reply_text("🔄 Готов к новому анализу. Пришли PDF-файл статьи.")
+        await query.message.reply_text(t("new_analysis", lang))
         return
 
     last_result = context.user_data.get("last_result")
-    lang = context.user_data.get("last_lang", DEFAULT_LANGUAGE)
 
     if not last_result:
-        await query.message.reply_text("⚠️ Нет предыдущего анализа. Пришли PDF снова.")
+        await query.message.reply_text(t("no_previous", lang))
         return
 
     direction = query.data
 
     if direction == "adjust_strengthen":
         instruction = (
-            "На основе предыдущего анализа — усиль выводы там где есть достаточно оснований. "
-            "Добавь конкретные примеры из текста. Укажи какие именно переходы наиболее критичны для логики статьи."
-            if lang == "ru" else
             "Based on the previous analysis — strengthen the conclusions where there is sufficient evidence. "
             "Add specific examples from the text. Indicate which switches are most critical for the article's logic."
         )
-        label = "⬆️ Усиленные выводы"
+        label = t("strengthen_label", lang)
     else:
         instruction = (
-            "На основе предыдущего анализа — смягчи выводы. "
-            "Укажи где автор мог намеренно упрощать, где переходы допустимы в контексте статьи, "
-            "и предложи минимальные правки которые делают рассуждение корректным."
-            if lang == "ru" else
             "Based on the previous analysis — soften the conclusions. "
             "Indicate where the author may have intentionally simplified, where transitions are acceptable in context, "
             "and suggest minimal fixes that make the reasoning valid."
         )
-        label = "⬇️ Смягчённые выводы"
+        label = t("soften_label", lang)
 
     await query.message.reply_text(f"⏳ *{label}*...", parse_mode="Markdown")
 
@@ -314,11 +575,11 @@ async def handle_adjust(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             chunks = [full_text[i:i+4000] for i in range(0, len(full_text), 4000)]
             for i, chunk in enumerate(chunks):
-                prefix = f"*[Часть {i+1}/{len(chunks)}]*\n\n" if len(chunks) > 1 else ""
+                prefix = t("part", lang, i=i+1, n=len(chunks)) if len(chunks) > 1 else ""
                 await query.message.reply_text(prefix + chunk, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Ошибка корректировки: {e}")
-        await query.message.reply_text("❌ Ошибка при корректировке выводов.")
+        await query.message.reply_text(t("error_adjust", lang))
 
 
 # ─── ВОПРОСЫ ПО АНАЛИЗУ (текстовые сообщения) ───────────────────────────────
@@ -331,19 +592,14 @@ async def handle_text_question(update: Update, context: ContextTypes.DEFAULT_TYP
     processed_message_ids.add(msg_id)
 
     last_result = context.user_data.get("last_result")
+    lang = context.user_data.get("last_lang", context.user_data.get("lang", DEFAULT_LANGUAGE))
 
     if not last_result:
-        # Нет активного анализа — подсказываем что делать
-        await update.message.reply_text(
-            "📄 Пришли PDF-файл статьи для анализа.\n"
-            "Или введи /help чтобы узнать как пользоваться ботом."
-        )
+        await update.message.reply_text(t("no_pdf_hint", lang))
         return
 
     question = update.message.text.strip()
-    lang = context.user_data.get("last_lang", DEFAULT_LANGUAGE)
-
-    thinking_msg = await update.message.reply_text("💭 Думаю...")
+    thinking_msg = await update.message.reply_text(t("thinking", lang))
 
     try:
         from analyzer import ask_about_analysis
@@ -351,13 +607,13 @@ async def handle_text_question(update: Update, context: ContextTypes.DEFAULT_TYP
 
         await thinking_msg.delete()
 
-        full_text = f"💬 *Ответ:*\n\n{answer}"
+        full_text = t("answer", lang) + answer
         if len(full_text) <= 4096:
             await update.message.reply_text(full_text, parse_mode="Markdown")
         else:
             chunks = [full_text[i:i+4000] for i in range(0, len(full_text), 4000)]
             for i, chunk in enumerate(chunks):
-                prefix = f"*[Часть {i+1}/{len(chunks)}]*\n\n" if len(chunks) > 1 else ""
+                prefix = t("part", lang, i=i+1, n=len(chunks)) if len(chunks) > 1 else ""
                 await update.message.reply_text(prefix + chunk, parse_mode="Markdown")
 
     except Exception as e:
@@ -366,7 +622,40 @@ async def handle_text_question(update: Update, context: ContextTypes.DEFAULT_TYP
             await thinking_msg.delete()
         except Exception:
             pass
-        await update.message.reply_text("❌ Не удалось ответить на вопрос. Попробуй ещё раз.")
+        await update.message.reply_text(t("error_qa", lang))
+
+
+# ─── МОНЕТИЗАЦИЯ (Telegram Stars) ────────────────────────────────────────────
+
+async def handle_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отправляет инвойс на покупку пакета анализов."""
+    query = update.callback_query
+    await query.answer()
+    lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
+    await context.bot.send_invoice(
+        chat_id=update.effective_chat.id,
+        title=t("payment_title", lang),
+        description=t("payment_desc", lang),
+        payload="analyses_pack_10",
+        currency="XTR",
+        prices=[LabeledPrice(t("payment_title", lang), STARS_PER_PACK)]
+    )
+
+
+async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Подтверждает платёж (обязательно для Telegram Stars)."""
+    await update.pre_checkout_query.answer(ok=True)
+
+
+async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начисляет анализы после успешной оплаты."""
+    user_id = update.effective_user.id
+    lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
+    current = user_analysis_count.get(user_id, 0)
+    # Вычитаем ANALYSES_PER_PACK из счётчика (даём ещё анализов)
+    user_analysis_count[user_id] = max(0, current - ANALYSES_PER_PACK)
+    logger.info(f"Пользователь {user_id} купил пакет {ANALYSES_PER_PACK} анализов.")
+    await update.message.reply_text(t("payment_ok", lang))
 
 
 # ─── ЗАПУСК ──────────────────────────────────────────────────────────────────
@@ -378,9 +667,15 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about_command))
     app.add_handler(CommandHandler("new", new_command))
+    app.add_handler(CommandHandler("en", lang_command))
+    app.add_handler(CommandHandler("ru", lang_command))
+    app.add_handler(CommandHandler("uk", lang_command))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_pdf))
+    app.add_handler(CallbackQueryHandler(handle_buy, pattern="^buy_pack$"))
     app.add_handler(CallbackQueryHandler(handle_adjust, pattern="^(adjust_|new_analysis)"))
     app.add_handler(CallbackQueryHandler(handle_mode_selection))
+    app.add_handler(PreCheckoutQueryHandler(pre_checkout))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_question))
 
     logger.info("Бот запущен...")

@@ -21,3 +21,7 @@ DEFAULT_LANGUAGE = "en"
 
 # Администраторы — безлимитный доступ
 ADMIN_USER_IDS = {1010993409}  # Roman Berezuiev
+
+# Монетизация
+ANALYSES_PER_PACK = 10   # анализов в пакете
+STARS_PER_PACK = 75      # ~$1 в Telegram Stars
