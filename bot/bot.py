@@ -778,7 +778,6 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
         is_testmode = user_id in test_mode_users
         if is_testmode:
-            # В тест-моде показываем кнопку покупки (как обычный юзер с нулём анализов)
             keyboard = InlineKeyboardMarkup([[
                 InlineKeyboardButton(t("buy_button", lang), callback_data="buy_pack")
             ]])
@@ -786,9 +785,9 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
                 f"🧪 [ТЕСТ-МОД] {t('limit_reached', lang)}",
                 reply_markup=keyboard
             )
-        elif remaining > 0 and user_id not in ADMIN_USER_IDS:
+        elif remaining > 0:
             await query.message.reply_text(t("remaining", lang, n=remaining))
-        elif remaining == 0 and user_id not in ADMIN_USER_IDS:
+        else:
             keyboard = InlineKeyboardMarkup([[
                 InlineKeyboardButton(t("buy_button", lang), callback_data="buy_pack")
             ]])

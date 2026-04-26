@@ -71,9 +71,7 @@ async def add_paid(user_id: int, amount: int):
 
 async def is_limit_reached(user_id: int) -> bool:
     """Проверяет достиг ли пользователь лимита анализов."""
-    from config import MAX_FREE_ANALYSES, ADMIN_USER_IDS
-    if user_id in ADMIN_USER_IDS:
-        return False
+    from config import MAX_FREE_ANALYSES
     user = await get_user(user_id)
     allowed = MAX_FREE_ANALYSES + user["paid"]
     return user["used"] >= allowed
