@@ -452,10 +452,13 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for e in reversed(recent)
     ) or "  —"
 
+    in_testmode = "🧪 ВКЛ" if user_id in test_mode_users else "✅ ВЫКЛ"
+
     text = (
         f"📊 Статистика AntiParadox-3000\n"
         f"Политика: {POLICY_VERSION}\n"
-        f"Запущен: {stats['started_at']}\n\n"
+        f"Запущен: {stats['started_at']}\n"
+        f"Тест-мод: {in_testmode}\n\n"
         f"Всего анализов: {stats['total_analyses']}\n"
         f"Всего вопросов: {stats['total_questions']}\n"
         f"Ошибок анализа: {stats['total_errors']}\n"
@@ -463,7 +466,23 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Топ пользователей:\n{top_text}\n\n"
         f"Последние события:\n{log_text}"
     )
-    await update.message.reply_text(text)
+
+    # Панель кнопок для администратора
+    admin_keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🧪 Включить тест-мод", callback_data="admin_testmode"),
+            InlineKeyboardButton("✅ Выйти из тест-мода", callback_data="admin_adminmode"),
+        ],
+        [
+            InlineKeyboardButton("➕ +1 анализ себе", callback_data="admin_addpaid_1"),
+            InlineKeyboardButton("➕ +10 анализов себе", callback_data="admin_addpaid_10"),
+        ],
+        [
+            InlineKeyboardButton("🔄 Обновить статистику", callback_data="admin_stats_refresh"),
+        ],
+    ])
+
+    await update.message.reply_text(text, reply_markup=admin_keyboard)
 
 
 async def testmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -488,6 +507,39 @@ async def adminmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     test_mode_users.discard(user_id)
     await update.message.reply_text("✅ Админ-мод восстановлен. Лимиты сняты.")
+
+
+async def handle_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обрабатывает кнопки админ-панели из /stats."""
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_USER_IDS:
+        return
+
+    if query.data == "admin_testmode":
+        test_mode_users.add(user_id)
+        test_mode_used[user_id] = 0
+        await query.message.reply_text(
+            "🧪 Тест-мод включён. Лимит: 1 анализ.\nДля выхода — нажми /stats → Выйти из тест-мода"
+        )
+
+    elif query.data == "admin_adminmode":
+        test_mode_users.discard(user_id)
+        await query.message.reply_text("✅ Админ-мод восстановлен. Лимиты сняты.")
+
+    elif query.data in ("admin_addpaid_1", "admin_addpaid_10"):
+        amount = 1 if query.data == "admin_addpaid_1" else 10
+        await add_paid(user_id, amount)
+        remaining = await get_remaining(user_id)
+        stats_log(user_id, "MANUAL_ADDPAID", f"target={user_id} amount={amount}")
+        await query.message.reply_text(
+            f"✅ Зачислено {amount} анализов.\nДоступно сейчас: {remaining}"
+        )
+
+    elif query.data == "admin_stats_refresh":
+        # Переиспользуем логику stats_command
+        await stats_command(update, context)
 
 
 async def addpaid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -948,6 +1000,7 @@ def main():
     app.add_handler(CommandHandler("uk", lang_command))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_pdf))
     app.add_handler(CallbackQueryHandler(handle_buy, pattern="^buy_pack$"))
+    app.add_handler(CallbackQueryHandler(handle_admin_panel, pattern="^admin_"))
     app.add_handler(CallbackQueryHandler(handle_adjust, pattern="^(adjust_|new_analysis)"))
     app.add_handler(CallbackQueryHandler(handle_mode_selection))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
