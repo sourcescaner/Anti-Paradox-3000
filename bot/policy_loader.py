@@ -145,11 +145,18 @@ def build_system_prompt(mode: str = "classical", lang: str = "en") -> str:
     # ─── Шаблон S-пункта ──────────────────────────────────────────────────────
     sw_tmpl = p.get("switch_item_template", {}).get(mode_key, "")
     sw_tmpl_clean = sw_tmpl.strip() if sw_tmpl else (
-        "{id}\n- agent: {agent}\n- where: pX-bY + anchor\n- evidence_A: quote\n- link_sentence: quote\n"
-        "- evidence_B: quote\n- tasks: PROB->FACT / WAVE->FACT\n"
-        "- disciplines: M/T/X/A\n- bridge: NONE | YES(type) | PSEUDO(type)\n"
-        "- illegal_transfer: what was transferred\n- why_switch: 1-2 sentences\n"
-        "- minimal_fix: bridge or weaken"
+        "{id}\n"
+        "- Кто рассуждает: [human description of agent]\n"
+        "- Где: pX-bY\n"
+        "- Исходное рассуждение: \"quote from text (<=25 words)\"\n"
+        "- Переход: \"connecting sentence (<=25 words)\"\n"
+        "- Итоговое утверждение: \"quote from text (<=25 words)\"\n"
+        "- Что переносится: one plain sentence, e.g. 'Из вероятностного расчёта делается вывод о конкретном факте'\n"
+        "- Мост: NONE | YES(describe) | PSEUDO(describe in words)\n"
+        "- Незаконный перенос: Да | Нет\n"
+        "- В чём проблема: 2-4 full sentences in plain language\n"
+        "- Как исправить: 2-3 full sentences naming the specific missing step\n"
+        "- Примечание RM: short phrase (only in rm mode)"
     )
 
     # ─── Секции вывода ────────────────────────────────────────────────────────
@@ -189,8 +196,16 @@ def build_system_prompt(mode: str = "classical", lang: str = "en") -> str:
             must = cfg.get("must_include", [])
             cmd_text += f"  explain S# — expand: {', '.join(must[:4])}, ...\n"
         elif cmd == "bridges":
-            out = cfg.get("output", [])
-            cmd_text += f"  bridges S# — {out[0] if out else 'list bridge options'}\n"
+            cmd_text += (
+                "  bridges S# — explain what a bridge would look like for this specific switch.\n"
+                "    First explain: a bridge is a sentence already in the text naming the connecting step.\n"
+                "    Then give 2-4 concrete options, e.g.:\n"
+                "    1. Explicit postselection: 'conditioning on ok, the remaining branch is...'\n"
+                "    2. Explicit recording: 'since F̄ has registered tails, the effective state is...'\n"
+                "    3. Honest weakening: replace 'the coin WAS tails' with 'this is compatible with tails'\n"
+                "    4. Explicit rule: 'by Born's rule applied to branch |ok⟩, probability=1 that...'\n"
+                "    NEVER suggest 'add an experiment' — this is a theory paper.\n"
+            )
         elif cmd == "weaken":
             out = cfg.get("output", [])
             cmd_text += f"  weaken S# — {out[0] if out else 'weaken claim'}\n"
@@ -238,6 +253,32 @@ RULE 3 — EXPLANATIONS MUST BE FULL SENTENCES, READABLE WITHOUT FRAMEWORK KNOWL
          испытании. Чтобы утверждать невозможность, нужна дополнительная
          операциональная предпосылка — например, регистрация результата
          наблюдателем."
+
+RULE 4 — WHAT A BRIDGE IS (AND IS NOT):
+  A bridge is a sentence ALREADY IN THE TEXT that names the physical process
+  or logical step connecting description A to claim B.
+  A bridge is NOT an external experiment. NEVER suggest "add experimental
+  confirmation" as a fix — this is a theory paper.
+  GOOD bridges (name a step inside the text):
+    - explicit postselection: "conditioning on outcome ok, the branch is..."
+    - explicit recording: "since F̄ has registered the result, the effective state is..."
+    - explicit rule application: "by Born's rule applied to branch |ok⟩..."
+    - honest weakening: "this outcome is COMPATIBLE WITH tails" instead of "tails was certain"
+  BAD (not a bridge):
+    - "the wave function collapses" ← pseudo-bridge, no step named
+    - "therefore" ← just a strong inference word
+    - "experimental confirmation needed" ← FORBIDDEN suggestion
+
+RULE 5 — AUTHOR'S MATHEMATICAL CONCLUSION IS NOT A SWITCH:
+  If AUTHOR derives a conclusion (e.g. "the no-go theorem is incorrect",
+  "Bohmian mechanics provides a consistent description") using their OWN
+  mathematical analysis laid out in the preceding paragraphs — this is NOT
+  an illegal transfer. A proof reaching its conclusion is not a switch.
+  NEVER flag "the no-go theorem is incorrect" as S2 when the authors have
+  spent 8 pages proving exactly this.
+  Only flag AUTHOR if they claim a specific concrete physical fact (e.g.
+  "the coin was definitely tails in run #47") without naming the step
+  that connects their math to that specific fact.
 
 ═══════════════════════════════════════
 {paper_type_text}
