@@ -937,7 +937,6 @@ async def handle_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
             title=t("payment_title", lang),
             description=t("payment_desc", lang),
             payload="analyses_pack_10",
-            provider_token="",
             currency="XTR",
             prices=[LabeledPrice(t("payment_title", lang), STARS_PER_PACK)]
         )
