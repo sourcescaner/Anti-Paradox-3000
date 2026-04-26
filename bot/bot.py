@@ -848,8 +848,11 @@ async def handle_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
     try:
-        await context.bot.send_invoice(
-            chat_id=update.effective_chat.id,
+        chat_id = update.effective_chat.id
+        user_id_log = update.effective_user.id
+        logger.info(f"[PAYMENT] Sending invoice to chat_id={chat_id} user_id={user_id_log}")
+        invoice_msg = await context.bot.send_invoice(
+            chat_id=chat_id,
             title=t("payment_title", lang),
             description=t("payment_desc", lang),
             payload="analyses_pack_10",
@@ -857,9 +860,13 @@ async def handle_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
             currency="XTR",
             prices=[LabeledPrice(t("payment_title", lang), STARS_PER_PACK)]
         )
-        logger.info(f"Invoice sent to user {update.effective_user.id}")
+        logger.info(f"[PAYMENT] Invoice sent OK to chat_id={chat_id}, message_id={invoice_msg.message_id}")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"⬆️ Выше — счёт на оплату. Нажми кнопку Pay внутри него."
+        )
     except Exception as e:
-        logger.error(f"Invoice error: {e}")
+        logger.error(f"[PAYMENT] Invoice error: {e}")
         await query.message.reply_text(f"❌ Ошибка при создании счёта: {e}")
 
 
