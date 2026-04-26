@@ -464,7 +464,11 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Ошибок анализа: {stats['total_errors']}\n"
         f"Покупок пакетов: {stats['total_purchases']}\n\n"
         f"Топ пользователей:\n{top_text}\n\n"
-        f"Последние события:\n{log_text}"
+        f"Последние события:\n{log_text}\n\n"
+        f"— Ручное пополнение:\n"
+        f"  /addpaid → +10 себе\n"
+        f"  /addpaid 5 → +5 себе\n"
+        f"  /addpaid 123456789 10 → +10 любому юзеру"
     )
 
     # Панель кнопок для администратора
