@@ -186,32 +186,47 @@ def build_system_prompt(mode: str = "classical", lang: str = "en") -> str:
     sections = [trans.get(s, s) for s in sections_raw]
     sections_text = "\n".join(f"  {s}" for s in sections)
 
-    # ─── Команды из interactive_handlers ──────────────────────────────────────
-    ih = p.get("interactive_handlers", {})
-    cmd_text = ""
-    for cmd, cfg in ih.items():
-        if cmd == "context":
-            cmd_text += f"  context pX-bY — return raw block text (±2 blocks, max ~2500 chars)\n"
-        elif cmd == "explain":
-            must = cfg.get("must_include", [])
-            cmd_text += f"  explain S# — expand: {', '.join(must[:4])}, ...\n"
-        elif cmd == "bridges":
-            cmd_text += (
-                "  bridges S# — explain what a bridge would look like for this specific switch.\n"
-                "    First explain: a bridge is a sentence already in the text naming the connecting step.\n"
-                "    Then give 2-4 concrete options, e.g.:\n"
-                "    1. Explicit postselection: 'conditioning on ok, the remaining branch is...'\n"
-                "    2. Explicit recording: 'since F̄ has registered tails, the effective state is...'\n"
-                "    3. Honest weakening: replace 'the coin WAS tails' with 'this is compatible with tails'\n"
-                "    4. Explicit rule: 'by Born's rule applied to branch |ok⟩, probability=1 that...'\n"
-                "    NEVER suggest 'add an experiment' — this is a theory paper.\n"
-            )
-        elif cmd == "weaken":
-            out = cfg.get("output", [])
-            cmd_text += f"  weaken S# — {out[0] if out else 'weaken claim'}\n"
-        elif cmd == "strengthen":
-            out = cfg.get("output", [])
-            cmd_text += f"  strengthen S# — {out[0] if out else 'state extra assumptions'}\n"
+    # ─── Команды из interactive_handlers (захардкожены по языку) ───────────────
+    CMD_TRANSLATIONS = {
+        "en": {
+            "context": "context pX-bY — return raw block text (±2 blocks, max ~2500 chars)",
+            "explain": "explain S# — expand: who reasons, where in text, source quote, transition sentence, ...",
+            "bridges": (
+                "bridges S# — explain what a bridge would look like for this specific switch.\n"
+                "    A bridge is a sentence already in the text naming the connecting step.\n"
+                "    Options: explicit postselection, explicit recording, honest weakening, explicit rule application.\n"
+                "    NEVER suggest 'add an experiment' — this is a theory paper."
+            ),
+            "weaken": "weaken S# — rewrite conclusion from 'must/uniquely' to 'compatible with / suggests / conditional on'",
+            "strengthen": "strengthen S# — state explicitly which extra assumptions or bridges are needed to justify a strong factual claim",
+        },
+        "ru": {
+            "context": "context pX-bY — вернуть текст блока (±2 блока, макс. ~2500 символов)",
+            "explain": "explain S# — расширить: кто рассуждает, где в тексте, исходная цитата, переходное предложение, ...",
+            "bridges": (
+                "bridges S# — объяснить каким был бы мост для этого переключения.\n"
+                "    Мост — предложение уже в тексте, называющее связующий шаг.\n"
+                "    Варианты: явный постселект, явная регистрация, честное ослабление, явное применение правила.\n"
+                "    НЕ предлагать 'добавить эксперимент' — это теоретическая статья."
+            ),
+            "weaken": "weaken S# — переписать вывод: заменить «обязательно/единственно» на «совместимо с / предполагает / при условии»",
+            "strengthen": "strengthen S# — указать явно какие дополнительные допущения или мосты нужны для обоснования сильного вывода",
+        },
+        "uk": {
+            "context": "context pX-bY — повернути текст блоку (±2 блоки, макс. ~2500 символів)",
+            "explain": "explain S# — розширити: хто міркує, де в тексті, вихідна цитата, перехідне речення, ...",
+            "bridges": (
+                "bridges S# — пояснити яким був би міст для цього переходу.\n"
+                "    Міст — речення вже в тексті, що називає сполучний крок.\n"
+                "    Варіанти: явний постселект, явна реєстрація, чесне пом'якшення, явне застосування правила.\n"
+                "    НЕ пропонувати 'додати експеримент' — це теоретична стаття."
+            ),
+            "weaken": "weaken S# — переписати висновок: замінити «обов'язково/єдино» на «сумісно з / припускає / за умови»",
+            "strengthen": "strengthen S# — вказати явно які додаткові припущення або мости потрібні для обґрунтування сильного висновку",
+        },
+    }
+    trans_cmd = CMD_TRANSLATIONS.get(lang, CMD_TRANSLATIONS["en"])
+    cmd_text = "\n".join(f"  {v}" for v in trans_cmd.values())
 
     # ─── Сборка промпта ───────────────────────────────────────────────────────
     prompt = f"""You are a scientific article analyzer (AntiParadox-3000). Policy version: {POLICY_VERSION}.
