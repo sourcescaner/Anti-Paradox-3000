@@ -36,12 +36,25 @@ def build_system_prompt(mode: str = "classical", lang: str = "en") -> str:
 
     # ─── Режим ───────────────────────────────────────────────────────────────
     mode_key = "rm" if mode == "rm" else "classic"
+    _rm_terms = {
+        "en": (
+            "incompatible tasks, violation of strictness, third type of knowledge,\n"
+            "  relative strictness, discontinuity of inference chain"
+        ),
+        "ru": (
+            "несовместимые задачи, нарушение строгости, третий тип знания,\n"
+            "  относительная строгость, разрыв непрерывности вывода"
+        ),
+        "uk": (
+            "несумісні задачі, порушення строгості, третій тип знання,\n"
+            "  відносна строгість, розрив ланцюга виведення"
+        ),
+    }
     if mode == "rm":
         mode_block = (
             "MODE: RM — use Relative Mathematics terminology:\n"
-            "  несовместимые задачи, нарушение строгости, третий тип знания,\n"
-            "  относительная строгость, разрыв непрерывности вывода.\n"
-            "  Add rm_note to each S-item (1 short phrase)."
+            f"  {_rm_terms.get(lang, _rm_terms['en'])}.\n"
+            "  Add rm_note to each S-item (1 short phrase IN THE SAME LANGUAGE as the rest of the output)."
         )
     else:
         mode_block = (
