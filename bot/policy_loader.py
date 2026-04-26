@@ -1,8 +1,8 @@
 import yaml
 import os
 
-POLICY_PATH = os.path.join(os.path.dirname(__file__), "..", "Files", "rm_bot_policy_v7_1.yml")
-POLICY_VERSION = "v7.1"
+POLICY_PATH = os.path.join(os.path.dirname(__file__), "..", "Files", "rm_bot_policy_v7_3.yml")
+POLICY_VERSION = "v7.3"
 
 
 def load_policy() -> dict:
