@@ -25,6 +25,7 @@ processed_callback_ids: set[str] = set()
 
 # Тест-мод (только для админов)
 test_mode_users: set[int] = set()
+test_mode_used: dict[int, int] = {}  # счётчик анализов внутри тест-сессии
 
 # ─── СТАТИСТИКА (сбрасывается при перезапуске) ───────────────────────────────
 from datetime import datetime
@@ -471,9 +472,11 @@ async def testmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in ADMIN_USER_IDS:
         return
     test_mode_users.add(user_id)
+    test_mode_used[user_id] = 0  # сбрасываем счётчик сессии
     await update.message.reply_text(
         "🧪 Тест-мод включён.\n"
         "Ты теперь обычный пользователь с лимитом 1 анализ.\n"
+        "Доступно: 1 анализ.\n"
         "Для возврата напиши /adminmode"
     )
 
@@ -532,10 +535,9 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t("too_large", lang))
         return
 
-    # Проверка лимита (тест-мод: лимит 1 анализ, без админ-привилегий)
+    # Проверка лимита (тест-мод: лимит 1 анализ в сессии, без БД)
     if user_id in test_mode_users:
-        user_data_db = await get_user(user_id)
-        if user_data_db["used"] >= 1:
+        if test_mode_used.get(user_id, 0) >= 1:
             keyboard = InlineKeyboardMarkup([[
                 InlineKeyboardButton(t("buy_button", lang), callback_data="buy_pack")
             ]])
@@ -643,8 +645,13 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
         result = await analyze_article(bytes(pdf_bytes), mode=mode, lang=lang)
 
-        await increment_used(user_id)
-        remaining = await get_remaining(user_id)
+        # Тест-мод: считаем локально, не пишем в БД
+        if user_id in test_mode_users:
+            test_mode_used[user_id] = test_mode_used.get(user_id, 0) + 1
+            remaining = 0  # в тест-моде показываем кнопку покупки
+        else:
+            await increment_used(user_id)
+            remaining = await get_remaining(user_id)
 
         context.user_data["last_result"] = result
         context.user_data["last_mode"] = mode
@@ -684,7 +691,17 @@ async def handle_mode_selection(update: Update, context: ContextTypes.DEFAULT_TY
 
         await query.message.reply_text(t("hint", lang), reply_markup=adjust_keyboard, parse_mode="Markdown")
 
-        if remaining > 0 and user_id not in ADMIN_USER_IDS:
+        is_testmode = user_id in test_mode_users
+        if is_testmode:
+            # В тест-моде показываем кнопку покупки (как обычный юзер с нулём анализов)
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton(t("buy_button", lang), callback_data="buy_pack")
+            ]])
+            await query.message.reply_text(
+                f"🧪 [ТЕСТ-МОД] {t('limit_reached', lang)}",
+                reply_markup=keyboard
+            )
+        elif remaining > 0 and user_id not in ADMIN_USER_IDS:
             await query.message.reply_text(t("remaining", lang, n=remaining))
         elif remaining == 0 and user_id not in ADMIN_USER_IDS:
             keyboard = InlineKeyboardMarkup([[
@@ -821,6 +838,13 @@ async def handle_text_question(update: Update, context: ContextTypes.DEFAULT_TYP
 async def handle_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Отправляет инвойс на покупку пакета анализов."""
     query = update.callback_query
+
+    cb_id = query.id
+    if cb_id in processed_callback_ids:
+        await query.answer()
+        return
+    processed_callback_ids.add(cb_id)
+
     await query.answer()
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
     try:
@@ -841,14 +865,16 @@ async def handle_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Подтверждает платёж (обязательно для Telegram Stars)."""
-    logger.info(f"PreCheckout from user {update.pre_checkout_query.from_user.id}")
-    await update.pre_checkout_query.answer(ok=True)
-    logger.info("PreCheckout answered OK")
+    pq = update.pre_checkout_query
+    logger.info(f"[PAYMENT] PreCheckout from user={pq.from_user.id} payload={pq.invoice_payload} amount={pq.total_amount} currency={pq.currency}")
+    await pq.answer(ok=True)
+    logger.info(f"[PAYMENT] PreCheckout answered OK for user={pq.from_user.id}")
 
 
 async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начисляет анализы после успешной оплаты."""
-    logger.info(f"SuccessfulPayment from user {update.effective_user.id}")
+    sp = update.message.successful_payment
+    logger.info(f"[PAYMENT] SuccessfulPayment from user={update.effective_user.id} payload={sp.invoice_payload} amount={sp.total_amount} currency={sp.currency}")
     user_id = update.effective_user.id
     lang = context.user_data.get("lang", DEFAULT_LANGUAGE)
     try:
