@@ -142,22 +142,56 @@ def build_system_prompt(mode: str = "classical", lang: str = "en") -> str:
         f"  Max words each quote: {evid.get('quote_policy', {}).get('max_words_each', 25)}"
     )
 
-    # ─── Шаблон S-пункта ──────────────────────────────────────────────────────
-    sw_tmpl = p.get("switch_item_template", {}).get(mode_key, "")
-    sw_tmpl_clean = sw_tmpl.strip() if sw_tmpl else (
-        "{id}\n"
-        "- Кто рассуждает: [human description of agent]\n"
-        "- Где: pX-bY\n"
-        "- Исходное рассуждение: \"quote from text (<=25 words)\"\n"
-        "- Переход: \"connecting sentence (<=25 words)\"\n"
-        "- Итоговое утверждение: \"quote from text (<=25 words)\"\n"
-        "- Что переносится: one plain sentence, e.g. 'Из вероятностного расчёта делается вывод о конкретном факте'\n"
-        "- Мост: NONE | YES(describe) | PSEUDO(describe in words)\n"
-        "- Незаконный перенос: Да | Нет\n"
-        "- В чём проблема: 2-4 full sentences in plain language\n"
-        "- Как исправить: 2-3 full sentences naming the specific missing step\n"
-        "- Примечание RM: short phrase (only in rm mode)"
-    )
+    # ─── Шаблон S-пункта (захардкожен по языку, не из YAML) ─────────────────
+    _rm_extra = {
+        "en": "- RM note: short phrase describing the incompatibility in RM terms",
+        "ru": "- Примечание RM: короткая фраза описывающая несовместимость в терминах ОМ",
+        "uk": "- Примітка RM: коротка фраза що описує несумісність у термінах ВМ",
+    }
+    SWITCH_ITEM_TEMPLATES = {
+        "en": (
+            "S#\n"
+            "- Who reasons: [name the agent: FR / AGENT_F / AGENT_Fbar / AUTHOR / etc.]\n"
+            "- Where: pX-bY\n"
+            "- Source reasoning: \"quote from text (<=25 words)\"\n"
+            "- Transition: \"connecting sentence (<=25 words)\"\n"
+            "- Target claim: \"quote from text (<=25 words)\"\n"
+            "- What is transferred: one plain sentence, e.g. 'A factual claim is derived from a probabilistic calculation'\n"
+            "- Bridge: NONE | YES(describe what step) | PSEUDO(describe the wording)\n"
+            "- Illegal transfer: Yes | No\n"
+            "- What is the problem: 2-4 full sentences in plain language\n"
+            "- How to fix: 2-3 full sentences naming the specific missing step"
+        ),
+        "ru": (
+            "S#\n"
+            "- Кто рассуждает: [назвать агента: FR / AGENT_F / AGENT_Fbar / AUTHOR / и т.д.]\n"
+            "- Где: pX-bY\n"
+            "- Исходное рассуждение: \"цитата из текста (<=25 слов)\"\n"
+            "- Переход: \"связующее предложение (<=25 слов)\"\n"
+            "- Итоговое утверждение: \"цитата из текста (<=25 слов)\"\n"
+            "- Что переносится: одно простое предложение, напр. 'Из вероятностного расчёта делается вывод о конкретном факте'\n"
+            "- Мост: NONE | YES(описать шаг) | PSEUDO(описать формулировку)\n"
+            "- Незаконный перенос: Да | Нет\n"
+            "- В чём проблема: 2-4 полных предложения простым языком\n"
+            "- Как исправить: 2-3 полных предложения с указанием конкретного недостающего шага"
+        ),
+        "uk": (
+            "S#\n"
+            "- Хто міркує: [назвати агента: FR / AGENT_F / AGENT_Fbar / AUTHOR / тощо]\n"
+            "- Де: pX-bY\n"
+            "- Вихідне міркування: \"цитата з тексту (<=25 слів)\"\n"
+            "- Перехід: \"зв'язуюче речення (<=25 слів)\"\n"
+            "- Підсумкове твердження: \"цитата з тексту (<=25 слів)\"\n"
+            "- Що переноситься: одне просте речення, напр. 'З імовірнісного розрахунку робиться висновок про конкретний факт'\n"
+            "- Міст: NONE | YES(описати крок) | PSEUDO(описати формулювання)\n"
+            "- Незаконний перенос: Так | Ні\n"
+            "- У чому проблема: 2-4 повних речення простою мовою\n"
+            "- Як виправити: 2-3 повних речення із зазначенням конкретного відсутнього кроку"
+        ),
+    }
+    sw_tmpl_clean = SWITCH_ITEM_TEMPLATES.get(lang, SWITCH_ITEM_TEMPLATES["en"])
+    if mode == "rm":
+        sw_tmpl_clean += "\n" + _rm_extra.get(lang, _rm_extra["en"])
 
     # ─── Секции вывода ────────────────────────────────────────────────────────
     SECTION_TRANSLATIONS = {
