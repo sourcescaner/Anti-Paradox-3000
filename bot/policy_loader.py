@@ -1,9 +1,8 @@
 import yaml
 import os
 
-POLICY_PATH = os.path.join(os.path.dirname(__file__), "..", "Files", "rm_bot_policy_v6.1.yml")
-POLICY_VERSION = "v6.1"
-
+POLICY_PATH = os.path.join(os.path.dirname(__file__), "..", "Files", "rm_bot_policy_v7_0.yml")
+POLICY_VERSION = "v7.0"
 
 
 def load_policy() -> dict:
@@ -83,6 +82,53 @@ def build_system_prompt(mode: str = "classical", lang: str = "en") -> str:
         f"  Action cues (A): {lex_list('Action_cues', 6)}"
     )
 
+    # ─── [v7.0] Тип статьи ───────────────────────────────────────────────────
+    pt = p.get("paper_type", {})
+    paper_type_text = (
+        "STEP 0 — CLASSIFY PAPER TYPE before any analysis:\n"
+        "  primary_paper: paper makes its own argument directly → detect switches in authors' own reasoning.\n"
+        "  response_paper: paper analyzes/criticizes another paper (e.g. L&H responding to FR) →\n"
+        "    first detect switches in quoted/paraphrased target reasoning,\n"
+        "    then separately detect switches in response authors' own claims.\n"
+        "    Never merge the two lists without labeling which is which."
+    )
+
+    # ─── [v7.0] Отслеживание агента ──────────────────────────────────────────
+    at = p.get("agent_tracking", {})
+    agent_roles = (
+        "AGENT ROLES — assign to every block before tagging:\n"
+        "  AUTHOR    — paper's own authors making their own claims\n"
+        "  FR        — Frauchiger-Renner being quoted or paraphrased\n"
+        "  AGENT_F   — internal agent F (friend) in thought experiment\n"
+        "  AGENT_Fbar— internal agent F-bar in thought experiment\n"
+        "  AGENT_W   — Wigner-type observer W\n"
+        "  AGENT_Wbar— Wigner-type observer W-bar\n"
+        "  MIXED     — block contains reasoning from more than one agent"
+    )
+
+    cues = at.get("detection_cues", {})
+    def cue_list(key, limit=5):
+        items = cues.get(key, [])[:limit]
+        return ", ".join(f'"{x}"' for x in items)
+
+    agent_cues_text = (
+        f"  FR cues: {cue_list('FR_cues')}, ...\n"
+        f"  AGENT_F cues: {cue_list('AGENT_F_cues')}\n"
+        f"  AGENT_Fbar cues: {cue_list('AGENT_Fbar_cues')}\n"
+        f"  AGENT_W cues: {cue_list('AGENT_W_cues')}\n"
+        f"  AGENT_Wbar cues: {cue_list('AGENT_Wbar_cues')}\n"
+        f"  AUTHOR cues: {cue_list('AUTHOR_cues')}, ..."
+    )
+
+    agent_legality = (
+        "AGENT LEGALITY RULE (run BEFORE switch detection):\n"
+        "  If agent = AUTHOR AND block is describing/criticizing a switch made by FR or an internal AGENT:\n"
+        "    → illegal_transfer = NO, rm_note = 'Author exposing switch, not committing one.'\n"
+        "    → Do NOT report as a finding in section 3. Mention in section 2 (Map) as context only.\n"
+        "  If agent = FR or AGENT_* → apply full switch detection.\n"
+        "  If agent = AUTHOR making their OWN strong factual claim without bridge → apply full switch detection."
+    )
+
     # ─── Правила обнаружения ──────────────────────────────────────────────────
     sd = p.get("switch_detection", {})
     legality = sd.get("legality_rules", [])
@@ -98,16 +144,15 @@ def build_system_prompt(mode: str = "classical", lang: str = "en") -> str:
 
     # ─── Шаблон S-пункта ──────────────────────────────────────────────────────
     sw_tmpl = p.get("switch_item_template", {}).get(mode_key, "")
-    # Убираем yaml-блочные символы, показываем как пример
     sw_tmpl_clean = sw_tmpl.strip() if sw_tmpl else (
-        "{id}\n- where: pX-bY + anchor\n- evidence_A: quote\n- link_sentence: quote\n"
+        "{id}\n- agent: {agent}\n- where: pX-bY + anchor\n- evidence_A: quote\n- link_sentence: quote\n"
         "- evidence_B: quote\n- tasks: PROB->FACT / WAVE->FACT\n"
         "- disciplines: M/T/X/A\n- bridge: NONE | YES(type) | PSEUDO(type)\n"
         "- illegal_transfer: what was transferred\n- why_switch: 1-2 sentences\n"
         "- minimal_fix: bridge or weaken"
     )
 
-    # ─── Секции вывода (с переводом названий по языку) ───────────────────────
+    # ─── Секции вывода ────────────────────────────────────────────────────────
     SECTION_TRANSLATIONS = {
         "en": {
             "0) TLDR": "0) TLDR",
@@ -163,6 +208,9 @@ Focus: PROB→FACT and WAVE→FACT switches only. Do not discuss interpretations
 {mode_block}
 
 ═══════════════════════════════════════
+{paper_type_text}
+
+═══════════════════════════════════════
 TASK TAGS (what kind of claim is made):
 {tasks_text}
 
@@ -175,6 +223,15 @@ SPECIAL MARKERS:
 ═══════════════════════════════════════
 LEXICON — keyword triggers for each tag:
 {lexicon_text}
+
+═══════════════════════════════════════
+[v7.0] AGENT TRACKING — identify WHO is reasoning before any switch detection:
+{agent_roles}
+
+Detection cues:
+{agent_cues_text}
+
+{agent_legality}
 
 ═══════════════════════════════════════
 SWITCH DETECTION:
@@ -199,6 +256,8 @@ S-ITEM TEMPLATE (use for every switch found):
 ═══════════════════════════════════════
 REQUIRED OUTPUT SECTIONS (in this order, plain text, NO markdown tables):
 {sections_text}
+
+  Section 3 note: list switches in TARGET reasoning first, then AUTHOR's own switches (if any), clearly labeled.
 
 ═══════════════════════════════════════
 FOLLOW-UP COMMANDS (support after initial report):
