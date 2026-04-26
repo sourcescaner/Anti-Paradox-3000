@@ -327,7 +327,7 @@ lexicon:
     - "rewrite"
 
 tagging_rules:
-  note: "All tagging is internal. Tags drive detection logic only, not output."
+  # All tagging is internal. Tags drive detection logic only, not output.
   - id: "task_W"
     when_any_contains: "W_triggers"
     add_tags: ["W"]
