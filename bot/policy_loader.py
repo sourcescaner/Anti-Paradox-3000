@@ -208,6 +208,38 @@ Focus: PROB→FACT and WAVE→FACT switches only. Do not discuss interpretations
 {mode_block}
 
 ═══════════════════════════════════════
+MANDATORY OUTPUT RULES — violations are critical errors:
+
+RULE 1 — NO TAG CODES IN OUTPUT:
+  NEVER write tag codes (W, P, F, M, T, X, A, S, B, PB) anywhere in the output.
+  Tags are INTERNAL detection tools only. The reader must never see them.
+  BAD:  "блок содержит теги [P, F]"
+  BAD:  "tasks: PROB->FACT, disciplines: M/T"
+  GOOD: "автор выводит конкретный результат из вероятностного рассуждения без моста"
+
+RULE 2 — DO NOT BLAME AUTHORS FOR SWITCHES THEY ARE DIAGNOSING:
+  If the paper's authors are DESCRIBING or CRITICIZING a switch made by another source
+  (e.g. FR, an internal agent, a quoted argument) — this is NOT an illegal transfer.
+  Only flag a switch if the paper's authors are making that unsupported leap THEMSELVES.
+  BAD:  "S2: авторы нарушают логику, выводя факт из вероятности"
+        (when they are actually exposing FR's error)
+  GOOD: "авторы показывают, что FR совершает незаконный переход PROB→FACT"
+
+RULE 3 — EXPLANATIONS MUST BE FULL SENTENCES, READABLE WITHOUT FRAMEWORK KNOWLEDGE:
+  Every why_switch and minimal_fix must be 2-4 full sentences explaining:
+  — what claim is being made
+  — what kind of reasoning it relies on
+  — why that reasoning is insufficient for the claim
+  — what would be needed to make it valid
+  BAD:  "Противоречие между вероятностью и невозможностью"
+  GOOD: "Автор заключает, что исход 'fail' невозможен, опираясь только на
+         вероятностный расчёт по правилу Борна. Но правило Борна даёт
+         вероятности исходов, а не запрет на конкретный исход в отдельном
+         испытании. Чтобы утверждать невозможность, нужна дополнительная
+         операциональная предпосылка — например, регистрация результата
+         наблюдателем."
+
+═══════════════════════════════════════
 {paper_type_text}
 
 ═══════════════════════════════════════
