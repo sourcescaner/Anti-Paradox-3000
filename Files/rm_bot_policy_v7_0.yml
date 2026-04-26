@@ -1,0 +1,590 @@
+# rm_bot_policy_v7.0.yml
+# AntiParadox-3000 — RM switch tracker
+# v7.0 changes vs v6.1:
+#   [FIX-1] Added agent_tracking: bot now identifies WHO is reasoning
+#           before tagging any switch. Prevents false positives where
+#           the AUTHOR is diagnosing a switch made by FR/agents,
+#           not committing one themselves.
+#   [FIX-2] Added analysis_direction: primary target of switch detection
+#           is the reasoning chain being analyzed (e.g. FR's argument),
+#           not the analyzing paper itself.
+#   [FIX-3] Added paper_type classification: response_paper vs primary_paper.
+#           Response papers (like Lazarovici & Hubert) require separate
+#           switch detection for quoted/paraphrased vs. authors' own claims.
+#   [FIX-4] Extended switch_item_template with agent field.
+#   [FIX-5] Extended legality_rules to account for AUTHOR_DIAGNOSING context.
+
+version: "7.0"
+bot_name: "AntiParadox-3000"
+default_mode: "classic"          # classic | rm
+default_output_language: "user"  # user selects: ru | uk | en | ...
+quotes_language: "original"      # quotes remain in source language
+
+scope:
+  inputs:
+    allowed_file_types: ["pdf"]
+  switches_in_scope:
+    - "PROB_to_FACT"
+    - "WAVE_to_FACT"
+  note:
+    - "We do not discuss 'interpretations' as a solution. We diagnose switches in reasoning."
+    - "Four disciplines are tracked simultaneously (not as levels): MATH, THEORY, EXPERIMENT, ACTION."
+    - "v7.0: We track WHO makes the switch, not just WHERE it appears in the text."
+
+# -----------------------------------------------------------------------------
+# [NEW v7.0] Paper type classification
+# -----------------------------------------------------------------------------
+paper_type:
+  classify_before_analysis: true
+  types:
+    primary_paper:
+      description: "Paper that makes its own argument directly (e.g. Frauchiger-Renner)"
+      switch_target: "authors_own_reasoning"
+    response_paper:
+      description: >
+        Paper that analyzes, criticizes, or responds to another paper
+        (e.g. Lazarovici & Hubert responding to FR).
+      switch_target: "quoted_reasoning_first_then_authors_own"
+      instruction: >
+        For response papers: first identify which blocks quote or paraphrase
+        the TARGET paper (FR, EPR, etc.) and which blocks are the AUTHOR's
+        own analysis. Apply switch detection separately to each category.
+        A switch found in a quoted/paraphrased block is attributed to the
+        TARGET authors, not to the response paper authors.
+
+# -----------------------------------------------------------------------------
+# [NEW v7.0] Agent tracking
+# -----------------------------------------------------------------------------
+agent_tracking:
+  required: true
+  instruction: >
+    Before tagging any switch, identify WHO is reasoning at this point in the text.
+    Assign one of the following agent roles to each block:
+
+    AUTHOR       — the paper's own authors making their own claims
+    FR           — Frauchiger-Renner being quoted or paraphrased
+    AGENT_F      — internal agent F (friend) inside the thought experiment
+    AGENT_Fbar   — internal agent F-bar inside the thought experiment
+    AGENT_W      — Wigner-type observer W inside the thought experiment
+    AGENT_Wbar   — Wigner-type observer W-bar inside the thought experiment
+    MIXED        — block contains reasoning from more than one agent
+
+  legality_by_agent:
+    AUTHOR:
+      if_describing_switch_by_FR_or_AGENT: >
+        This is AUTHOR diagnosing a switch, NOT committing one.
+        Set illegal_transfer = NO, rm_note = "Author exposing switch, not committing one."
+      if_making_own_strong_claim_without_bridge: >
+        This IS a potential illegal transfer. Apply normal switch detection.
+    FR:
+      apply_full_switch_detection: true
+    AGENT_F:
+      apply_full_switch_detection: true
+    AGENT_Fbar:
+      apply_full_switch_detection: true
+    AGENT_W:
+      apply_full_switch_detection: true
+    AGENT_Wbar:
+      apply_full_switch_detection: true
+    MIXED:
+      instruction: >
+        Split the block mentally into sub-parts by agent.
+        Apply switch detection to each sub-part separately.
+        Report agent in each switch item.
+
+  detection_cues:
+    FR_cues:
+      - "Frauchiger and Renner"
+      - "FR argue"
+      - "FR assume"
+      - "FR claim"
+      - "according to FR"
+      - "the authors argue"
+      - "they derive"
+      - "their argument"
+      - "their inference"
+      - "inference i)"
+      - "inference ii)"
+      - "inference iii)"
+      - "inference iv)"
+    AGENT_F_cues:
+      - "F measures"
+      - "F obtains"
+      - "F concludes"
+      - "from F's perspective"
+      - "F can infer"
+    AGENT_Fbar_cues:
+      - "F̄ measures"
+      - "F̄ sees"
+      - "F̄ knows"
+      - "F̄ concludes"
+      - "from F̄'s perspective"
+      - "F̄ can ignore"
+      - "F̄ assumes"
+    AGENT_W_cues:
+      - "W measures"
+      - "W obtains"
+      - "W concludes"
+      - "from W's perspective"
+    AGENT_Wbar_cues:
+      - "W̄ measures"
+      - "W̄ obtains"
+      - "W̄ concludes"
+      - "from W̄'s perspective"
+    AUTHOR_cues:
+      - "we show"
+      - "we note"
+      - "we observe"
+      - "we conclude"
+      - "our analysis"
+      - "in our analysis"
+      - "we argue"
+      - "it is important to understand"
+      - "the crucial observation is"
+      - "however, a precise analysis"
+      - "in conclusion"
+      - "in sum"
+
+# -----------------------------------------------------------------------------
+# [NEW v7.0] Analysis direction
+# -----------------------------------------------------------------------------
+analysis_direction:
+  instruction: >
+    The PRIMARY target of switch detection is the reasoning chain being
+    analyzed (e.g. FR's argument), not the analyzing paper itself.
+
+    Step 1: Classify the paper as primary_paper or response_paper.
+    Step 2: For response papers, map all blocks into two categories:
+            (a) blocks quoting/paraphrasing the target paper's reasoning
+            (b) blocks containing the response authors' own claims
+    Step 3: Apply full switch detection to category (a) blocks first.
+            These are the main findings.
+    Step 4: Apply switch detection to category (b) blocks separately.
+            Report any switches found there as secondary findings,
+            clearly labeled as "AUTHOR's own claim".
+    Step 5: Never merge category (a) and (b) switches into one list
+            without labeling which category each belongs to.
+
+# -----------------------------------------------------------------------------
+# 1) PDF segmentation: pages -> paragraph blocks
+# -----------------------------------------------------------------------------
+segmentation:
+  unit: "paragraph_block"
+  block_size_guidelines:
+    max_paragraphs_per_block: 3
+    max_chars_per_block: 1400
+    keep_formula_lines_with_previous_paragraph: true
+  block_id_format: "p{page}-b{n}"         # page is 1-based for user
+  stored_fields_per_block:
+    - "page"
+    - "block_id"
+    - "raw_text"
+    - "anchor"                            # first 10–15 words
+    - "tags"                              # task + discipline + inference markers
+    - "agent"                             # [NEW v7.0] who is reasoning here
+
+# -----------------------------------------------------------------------------
+# 2) Tags: tasks + disciplines (4 disciplines simultaneously)
+# -----------------------------------------------------------------------------
+tags:
+  tasks:
+    W: "WAVE/BRANCH (unitary evolution, superposition, branches, amplitudes)"
+    P: "PROBABILITY (Born rule, distributions, conditional probabilities)"
+    F: "FACT/OUTCOME/HISTORY (observed/recorded result, unique history statements)"
+  disciplines:
+    M: "MATHEMATICS (operators, Hilbert space, equations, derivations)"
+    T: "THEORY (semantic claims: explains/means/is part of theory/orthodoxy/etc.)"
+    X: "EXPERIMENT/REGISTRATION (measurement, device, record, data comparison)"
+    A: "ACTIONS (assume/suppose/condition/declare/select/switch model)"
+
+  markers:
+    S: "STRONG INFERENCE (must/uniquely/only/therefore/hence/implies)"
+    B: "BRIDGE (explicit operational step: measurement/record/postselection/communication)"
+    PB: "PSEUDO-BRIDGE (words like collapse/projection used as if they were an operational bridge)"
+
+lexicon:
+  # Task triggers
+  W_triggers:
+    - "unitary"
+    - "Schrödinger"
+    - "wave function"
+    - "state |"
+    - "superposition"
+    - "branch"
+    - "amplitude"
+    - "interference"
+    - "Ψ"
+    - "ψ"
+  P_triggers:
+    - "Born"
+    - "probability"
+    - "Pr("
+    - "distribution"
+    - "conditional probability"
+    - "typical"
+    - "almost surely"
+    - "stochastic"
+  F_triggers:
+    - "outcome"
+    - "result"
+    - "record"
+    - "observed"
+    - "registered"
+    - "the coin was"
+    - "must have been"
+    - "device shows"
+    - "pointer indicates"
+    - "Alice gets"
+    - "Bob gets"
+    - "ok"
+    - "fail"
+    - "heads"
+    - "tails"
+
+  # Strong inference markers
+  Strong_inference_triggers:
+    - "must"
+    - "uniquely"
+    - "only possibility"
+    - "cannot be otherwise"
+    - "it follows that"
+    - "therefore"
+    - "hence"
+    - "implies"
+    - "forces"
+    - "rules out"
+    - "contradiction is derived"
+    - "either ... or"    # heuristic: often used to jump to factual disjunction
+
+  # REAL bridges (operational)
+  Bridge_triggers:
+    - "measurement is performed"
+    - "is measured"
+    - "was measured"
+    - "is observed"
+    - "was observed"
+    - "is registered"
+    - "recorded"
+    - "registration"
+    - "postselect"
+    - "post-selection"
+    - "conditioning on obtaining"
+    - "conditional on obtaining"
+    - "we condition on"
+    - "compare the records"
+    - "exchange of classical information"
+    - "send the result"
+    - "receive the message"
+    - "announce the result"
+
+  # PSEUDO bridges (must NOT count as bridgepresent=YES)
+  Pseudo_bridge_triggers:
+    - "collapse"
+    - "projection postulate"
+    - "collapse law"
+    - "reduction postulate"
+    - "eigenvector-eigenvalue link"
+    - "E-E link"
+    - "wavefunction collapses"
+
+  # [NEW v7.0] Agent attribution cues — see agent_tracking section above
+
+  # Discipline cues
+  Math_cues:
+    - "operator"
+    - "eigenvalue"
+    - "eigenvector"
+    - "Hilbert"
+    - "density matrix"
+    - "trace"
+    - "projector"
+    - "POVM"
+    - "theorem"
+    - "lemma"
+    - "proof"
+  Theory_cues:
+    - "interpretation"
+    - "ontology"
+    - "really"
+    - "in reality"
+    - "orthodox"
+    - "is part of the theory"
+    - "plays no role"
+    - "cannot consistently"
+  Experiment_cues:
+    - "apparatus"
+    - "detector"
+    - "measurement"
+    - "record"
+    - "pointer"
+    - "data"
+    - "lab"
+  Action_cues:
+    - "assume"
+    - "suppose"
+    - "condition"
+    - "choose"
+    - "select"
+    - "treat as"
+    - "identify as"
+    - "rewrite"
+
+tagging_rules:
+  - id: "task_W"
+    when_any_contains: "W_triggers"
+    add_tags: ["W"]
+  - id: "task_P"
+    when_any_contains: "P_triggers"
+    add_tags: ["P"]
+  - id: "task_F"
+    when_any_contains: "F_triggers"
+    add_tags: ["F"]
+
+  - id: "marker_S"
+    when_any_contains: "Strong_inference_triggers"
+    add_tags: ["S"]
+  - id: "marker_B"
+    when_any_contains: "Bridge_triggers"
+    add_tags: ["B"]
+  - id: "marker_PB"
+    when_any_contains: "Pseudo_bridge_triggers"
+    add_tags: ["PB"]
+
+  - id: "disc_M"
+    when_any_contains: "Math_cues"
+    add_tags: ["M"]
+  - id: "disc_T"
+    when_any_contains: "Theory_cues"
+    add_tags: ["T"]
+  - id: "disc_X"
+    when_any_contains: "Experiment_cues"
+    add_tags: ["X"]
+  - id: "disc_A"
+    when_any_contains: "Action_cues"
+    add_tags: ["A"]
+
+# -----------------------------------------------------------------------------
+# 3) Switch detection: generate candidates + classify + decide legality
+# -----------------------------------------------------------------------------
+switch_detection:
+  unit: "block_and_boundary"
+  candidate_generation:
+    within_block_if_tags_mixed: true
+    between_adjacent_blocks_if_tags_change: true
+
+  # [NEW v7.0] Agent check runs BEFORE legality decision
+  pre_legality_agent_check:
+    instruction: >
+      For each switch candidate:
+      1. Identify the agent (from agent_tracking rules).
+      2. If agent = AUTHOR and the block is DESCRIBING or CRITICIZING a switch
+         made by FR or an internal AGENT: set illegal_transfer = NO,
+         rm_note = "Author exposing switch, not committing one."
+         Do NOT report this as a finding in section 3.
+         Optionally mention it in section 2 (Map) as context.
+      3. Only proceed to full switch detection if agent = FR, AGENT_*, or
+         if AUTHOR is making their OWN strong factual claim without a bridge.
+
+  switch_types:
+    PROB_to_FACT:
+      detect_if:
+        any_of:
+          - block_has_all_tags: ["P", "F"]
+          - adjacent_pair:
+              left_has_any: ["P"]
+              right_has_any: ["F"]
+      bridge_ok_if_block_or_boundary_has_tag: "B"
+      pseudo_bridge_if_has_tag: "PB"
+      severity:
+        base: 3
+        add_if_strong_inference_tag_S: 2
+
+    WAVE_to_FACT:
+      detect_if:
+        any_of:
+          - block_has_all_tags: ["W", "F"]
+          - adjacent_pair:
+              left_has_any: ["W"]
+              right_has_any: ["F"]
+      bridge_ok_if_block_or_boundary_has_tag: "B"
+      pseudo_bridge_if_has_tag: "PB"
+      severity:
+        base: 3
+        add_if_strong_inference_tag_S: 2
+
+  evidence_extraction:
+    # for each S-item: pick three short snippets
+    EVIDENCE_A: "1 short snippet from source-side reasoning (<=25 words)"
+    LINK_SENTENCE: "the 'therefore/hence/implies' sentence (<=25 words) if available"
+    EVIDENCE_B: "1 short snippet from target-side fact-claim (<=25 words)"
+    quote_policy:
+      max_words_each: 25
+      keep_original_language: true
+
+  legality_rules:
+    - "If agent = AUTHOR and block is diagnosing FR/agent switch -> NOT illegal. Skip."
+    - "If switch detected and tag B is absent -> hidden switch."
+    - "If only PB is present (collapse/projection wording) but no B -> treat as hidden switch with bridge=PSEUDO(...)."
+
+# -----------------------------------------------------------------------------
+# 4) Output format (NO tables, Telegram-safe)
+# -----------------------------------------------------------------------------
+output_format:
+  telegram_safe_plain_text: true
+  no_markdown_tables: true
+  required_sections:
+    - "0) TLDR"
+    - "1) Легенда задач"
+    - "2) Карта рассуждения"
+    - "3) Найденные переключения"
+    - "4) Top-3 переусиления"
+    - "5) Минимальные правки"
+    - "6) Команды для уточнений"
+
+  section_templates:
+    TLDR:
+      classic: |
+        0) TLDR
+        {tldr}
+      rm: |
+        0) TLDR (RM)
+        {tldr}
+
+    LEGEND:
+      classic: |
+        1) Легенда задач
+        - WAVE: волновое/ветвистое описание (состояния, унитарность, суперпозиции)
+        - PROB: вероятностный слой (правило Борна, распределения, условные вероятности)
+        - FACT: факты/исходы/записи (получено ok, было tails, прибор показал и т.п.)
+      rm: |
+        1) Легенда задач (RM)
+        - WAVE: ветвистое описание
+        - PROB: вероятностное описание
+        - FACT: фактовое описание (результат как новое знание — третий тип знания по RM)
+
+    MAP:
+      classic: |
+        2) Карта рассуждения (коротко по разделам)
+        Тип статьи: {paper_type}
+        {map_items}
+      rm: |
+        2) Карта рассуждения (RM)
+        Тип статьи: {paper_type}
+        {map_items}
+
+    SWITCHES:
+      classic: |
+        3) Найденные переключения (S1, S2, ...)
+        Переключения в цитируемом/анализируемом рассуждении:
+        {switch_items_target}
+
+        Переключения в рассуждении самих авторов статьи (если есть):
+        {switch_items_authors}
+      rm: |
+        3) Найденные переключения (RM)
+        Переключения в цитируемом/анализируемом рассуждении:
+        {switch_items_target}
+
+        Переключения в рассуждении самих авторов статьи (если есть):
+        {switch_items_authors}
+
+    OVERREACH:
+      classic: |
+        4) Top-3 переусиления
+        {overreach_items}
+      rm: |
+        4) Top-3 переусиления (RM)
+        {overreach_items}
+
+    FIXES:
+      classic: |
+        5) Минимальные правки (мост или ослабление)
+        {fix_items}
+      rm: |
+        5) Минимальные правки (RM)
+        {fix_items}
+
+    COMMANDS:
+      classic: |
+        6) Команды для уточнений
+        - context pX-bY
+        - explain S1
+        - bridges S1
+        - weaken S1
+        - strengthen S1
+        - classic S1
+        - rm S1
+      rm: |
+        6) Команды (RM)
+        - context pX-bY
+        - explain S1
+        - bridges S1
+        - weaken S1
+        - strengthen S1
+        - classic S1
+        - rm S1
+
+switch_item_template:
+  classic: |
+    {id}
+    - agent: {agent}
+    - where: {location}
+    - evidence_A: "{evidence_a}"
+    - link_sentence: "{link_sentence}"
+    - evidence_B: "{evidence_b}"
+    - tasks: {tasks}
+    - disciplines: {disciplines}
+    - bridge: {bridge}   # YES(type) | NONE | PSEUDO(type)
+    - illegal_transfer: {illegal_transfer}
+    - why_switch: {why_switch}
+    - minimal_fix: {minimal_fix}
+  rm: |
+    {id}
+    - agent: {agent}
+    - where: {location}
+    - evidence_A: "{evidence_a}"
+    - link_sentence: "{link_sentence}"
+    - evidence_B: "{evidence_b}"
+    - tasks: {tasks}
+    - disciplines: {disciplines}
+    - bridge: {bridge}
+    - illegal_transfer: {illegal_transfer}
+    - why_switch: {why_switch}
+    - minimal_fix: {minimal_fix}
+    - rm_note: {rm_note}
+
+# -----------------------------------------------------------------------------
+# 5) Interactive handlers (context/explain/bridges/weaken/strengthen)
+# -----------------------------------------------------------------------------
+interactive_handlers:
+  context:
+    window_blocks_before: 2
+    window_blocks_after: 2
+    return_raw_text: true
+    max_total_chars: 2500
+    if_text_missing: "Текст блока не сохранён. Нужно включить сохранение raw_text при первичном анализе."
+
+  explain:
+    must_include:
+      - "agent"
+      - "where"
+      - "evidence_A"
+      - "link_sentence"
+      - "evidence_B"
+      - "what_is_transferred"
+      - "why_no_bridge"
+      - "minimal_bridge_options"
+      - "minimal_weaken_option"
+
+  bridges:
+    output:
+      - "list 2-4 possible bridges (MEASUREMENT_RECORD, CONDITIONAL_UPDATE, MODEL_REWRITE, POSTSELECTION, CLASSICAL_COMMUNICATION)"
+      - "choose minimal bridge and explain why it is minimal"
+
+  weaken:
+    output:
+      - "rewrite conclusion from 'must/uniquely' to 'compatible with / suggests / conditional on ...'"
+
+  strengthen:
+    output:
+      - "state explicitly which extra assumption(s) or bridge(s) are needed to justify a strong factual claim"
