@@ -490,6 +490,35 @@ async def adminmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Админ-мод восстановлен. Лимиты сняты.")
 
 
+async def addpaid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Вручную зачисляет анализы пользователю. Только для админа.
+    Использование: /addpaid [user_id] [amount]
+    Без аргументов — зачисляет 10 анализов себе."""
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_USER_IDS:
+        return
+    args = context.args
+    try:
+        if len(args) == 0:
+            target_id, amount = user_id, ANALYSES_PER_PACK
+        elif len(args) == 1:
+            target_id, amount = user_id, int(args[0])
+        else:
+            target_id, amount = int(args[0]), int(args[1])
+        await add_paid(target_id, amount)
+        remaining = await get_remaining(target_id)
+        await update.message.reply_text(
+            f"✅ Зачислено {amount} анализов пользователю {target_id}.\n"
+            f"Всего доступно сейчас: {remaining}"
+        )
+        stats_log(user_id, "MANUAL_ADDPAID", f"target={target_id} amount={amount}")
+    except (ValueError, IndexError):
+        await update.message.reply_text(
+            "❌ Использование: /addpaid [user_id] [amount]\n"
+            "Примеры:\n  /addpaid → +10 себе\n  /addpaid 5 → +5 себе\n  /addpaid 123456 10 → +10 юзеру"
+        )
+
+
 async def lang_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Переключает язык по команде /en, /ru, /uk."""
     cmd = update.message.text.strip().lstrip("/").lower()
@@ -913,6 +942,7 @@ def main():
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("testmode", testmode_command))
     app.add_handler(CommandHandler("adminmode", adminmode_command))
+    app.add_handler(CommandHandler("addpaid", addpaid_command))
     app.add_handler(CommandHandler("en", lang_command))
     app.add_handler(CommandHandler("ru", lang_command))
     app.add_handler(CommandHandler("uk", lang_command))
